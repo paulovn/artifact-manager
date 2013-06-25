@@ -37,9 +37,10 @@ except ImportError:
 try:
     import smb.SMBConnection
     from nmb.NetBIOS import NetBIOS
+    from mySMB import mySMBConnection
 except ImportError:
     pass
-#from mySMB import mySMBConnection
+
 
 # Default URLs for the artifacts repository (as R & R/W transports)
 REPO_URL = ('http://artifacts.hi.inet',
@@ -95,9 +96,16 @@ class InvalidArgumentError( GenericError ):
 
 def parse_unc( unc, subpath ):
     """
-    Parse a Windows UNC path, possibly including host, user,
-    password, domain & share
-      @return (dict) the result fata
+    Parse a Windows UNC path, possibly including host, user, password, domain 
+    and share. The full specification of the UNC string is:
+
+                \\domain\user:password@host\share\path
+
+      @param unc (str): the UNC path. If it does not contain password
+        information, it will be prompted to the console
+      @param subpath (str): an optional subpath to add at the end of the 
+        UNC path
+      @return (dict): the result data, separated by component
     """
     m = re.match( r"""\\\\
                       (?: (?: (?P<domain>[-.\w]+) \\ )?
@@ -106,7 +114,9 @@ def parse_unc( unc, subpath ):
                        @ )?
                       (?P<host>[-.\w]+)
                       \\
-                      (?P<path>.+)""", unc, re.X )
+                      (?P<share>[^\\]+)
+                      (?: \\
+                          (?P<path>.+) )?""", unc, re.X )
     if not m:
         raise InvalidArgumentError( 'can\'t understand SMB UNC: %' % unc )
     d = m.groupdict()
@@ -116,8 +126,8 @@ def parse_unc( unc, subpath ):
         d['domain'] = DOMAIN
     if d['pass'] is None:
         d['pass'] = getpass.getpass("Please insert password for SMB user '{domain}\\{user}' on {host}: ".format( **d ) )
-    d['path'] = os.path.join( d['path'], subpath) 
-    print d
+    d['path'] = os.path.join(d['path'], subpath)  if d['path'] else subpath
+    #print d
     return d
 
 def mkpath_recursive(path):
@@ -125,7 +135,7 @@ def mkpath_recursive(path):
     try:
         mode = os.stat( path ).st_mode
         if not stat.S_ISDIR(mode):
-            raise InvalidArgumentError("parent path '"+str(path)+"' is not a dir")
+            raise InvalidArgumentError("parent path '"+str(path)+"' not a dir")
     except OSError as e:
         if e.errno != errno.ENOENT:
             raise
@@ -134,6 +144,41 @@ def mkpath_recursive(path):
             mkpath_recursive( head )
         os.mkdir( path )
 
+
+ 
+
+def git_find_info( what, repo_dir ):
+    """
+    Find information about a git repository. Try first calling the git
+    command line directly; if that fails search within git internals
+    """
+    class StrippedFile(file):
+        """A small helper class to read a config file with leading spaces"""
+        def readline(self):
+            return super(StrippedFile, self).readline().strip()
+
+    commands = { 'remote' : ['git','config','--get', 'remote.origin.url'],
+                 'branch' : ['git','rev-parse','--abbrev-ref','HEAD'] }
+    try:
+        cmd = commands[what]
+        output = subprocess.check_output(cmd,cwd=args.dir).rstrip()
+    except:
+        if what == 'remote':
+            c = SafeConfigParser()
+            with StrippedFile(os.path.join(repo_dir,'.git','config')) as f:
+                c.readfp(f)
+            output = c.get('remote "origin"','url')
+        else:
+            with open(os.path.join(repo_dir,'.git','HEAD')) as f:
+                data = f.readline().rstrip()
+            return data.split('/')[-1]
+
+    if what == 'remote':
+        (head,tail) = output.split(':')
+        (repo_name,ext) = os.path.splitext( tail )
+        return repo_name
+    else:
+        return output
 
 # ---------------------------------------------------------------------
         
@@ -237,7 +282,9 @@ class LocalTransport( BaseWTransport ):
     def get( self, sourcename, dest ):
         """
         Read a file into a file-like destination.
-        Return \c True if ok, \c False if the file does not exist
+          @param sourcename (str): name of the file in remote repo
+          @param dest (file): an object with a write() method
+          @return (bool): \c True if ok, \c False if the file does not exist
         """
         name = os.path.join(self._basedir,sourcename)
         try:
@@ -256,6 +303,9 @@ class LocalTransport( BaseWTransport ):
     def put( self, source, destname ):
         """
         Store a file. If a file with the same name existed, it is overwritten
+          @param source (file): an object with a read() method
+          @param destname (str): name of the destination file,
+            relative to repo base directory
         """
         name = os.path.join(self._basedir,destname)
         with open(name, 'wb') as f:
@@ -317,30 +367,33 @@ class SMBTransport( BaseWTransport ):
     def __init__( self, url, subrepo ):
         super(SMBTransport,self).__init__()
         d = parse_unc( url, subrepo )
-        #n = NetBIOS();r = n.queryName( d['host'] ); print r
-        #r = n.queryIPForName( gethostbyname(d['host']) ); print "NAMES: ", r
+        n = NetBIOS();  #r = n.queryName( d['host'] ); print r
+        smb_name = n.queryIPForName( gethostbyname(d['host']) ); 
+        #print "NAMES: ", smb_name
         if True:
             self.conn = mySMBConnection( d['user'], d['pass'], gethostname(), 
-                                         r[0], domain=d['domain'], 
-                                         use_ntlm_v2 = True, 
+                                         smb_name[0], domain=d['domain'], 
+                                         use_ntlm_v2 = False, 
                                          sign_options = smb.SMBConnection.SMBConnection.SIGN_WHEN_SUPPORTED,
                                          is_direct_tcp = False)
             r = self.conn.connect( gethostbyname(d['host']), 139 )
            #self.conn.close()
         else:
             self.conn = mySMBConnection( d['user'], d['pass'], gethostname(), 
-                                         r[0], domain=d['domain'], 
-                                         use_ntlm_v2 = True, 
+                                         smb_name[0], domain=d['domain'], 
+                                         use_ntlm_v2 = False, 
                                          sign_options = smb.SMBConnection.SMBConnection.SIGN_WHEN_SUPPORTED,
                                          is_direct_tcp = True)
             r = self.conn.connect( gethostbyname(d['host']), 445 )
+        self.cdata = d
 
     def init_base( self ):
         """Ensure the base path for the repository exists"""
         pass
 
     def get( self, sourcename, dest ):
-        pass
+        path = os.path.join( self.cdata['path'], sourcename )
+        self.conn.retrieveFile( self.cdata['share'], path, dest )
 
     def put( self, source, destname ):
         pass
@@ -800,22 +853,10 @@ args = parser.parse_args()
 # name of the git repo checked out in the local folder, and the
 # current checked out branch
 if not args.repo_name:
-    try:
-        cmd = ['git','config','--get', 'remote.origin.url']
-        remote = subprocess.check_output(cmd,cwd=args.dir).rstrip()
-    except:
-        raise
-    (head,tail) = remote.split(':')
-    #(head,tail) = os.path.split( remote )
-    (args.repo_name,ext) = os.path.splitext( tail )
+    args.repo_name = git_find_info( 'remote', args.dir )
 if not args.branch:
-    try:
-        cmd = ['git','rev-parse','--abbrev-ref','HEAD']
-        args.branch = subprocess.check_output(cmd,cwd=args.dir).rstrip()
-
-    except:
-        raise
-
+    args.branch = git_find_info( 'branch', args.dir )
+print args
 
 # Split extensions
 if args.extensions is not None:
