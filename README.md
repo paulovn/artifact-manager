@@ -10,25 +10,25 @@ in the project tree is preserved.
 
 It accepts the following operations:
 
-  list	    List the artifacts stored in a remote repo for a given branch
+ * __list__  List the artifacts stored in a remote repo for a given branch
 
-  check	    Compare the artifacts in the local tree with the remote repo
+ * __check__ Compare the artifacts in the local tree with the remote repo
 
-  download  Fetch artifacts for the current branch from the repo.
-  	    Only new & modified artifacts will be downloaded. They will be
-	    left in their defined places in the project tree.
+ * __download__  Fetch artifacts for the current branch from the repo.
+     Only new & modified artifacts will be downloaded. They will be
+     left in their defined places in the project tree.
 
-  upload    Upload all local artifacts to the repo, defining the set for
-            the current branch. Only new/modified files will be uploaded
+ * __upload__  Upload all local artifacts to the repo, defining the set for
+       the current branch. Only new/modified files will be uploaded
 
-  purge	    **future op**
+ * __purge__	  *future op*
 
-  setoptions **future op**
+ * __setoptions__ *future op*
 
 
 
 Transports
-**********
+----------
 
 * HTTP for read-only operations (list, check, download)
 * Local folder for upload operations (mount a remote disk locally)
@@ -36,7 +36,7 @@ Transports
 
 
 Argument specification
-**********************
+----------------------
 
 A repository is defined on top of a transport layer (each transport
 endpoint can contain a number of repositories) with a string. On top
@@ -49,23 +49,32 @@ The parameter needed for operation are
 * Local project tree
 
 
-Configuration cptions
-*********************
+Configuration options
+---------------------
 
-* extensions
-* min_size
+* --extensions
+* --min-size
+
+
+Other options
+-------------
+
+* --verbose <n>
+* --dry-run
+* --overwrite
+
 
 Requirements
-************
+------------
 
 * Python 2.6 or above
 
 * The following non-core Python modules (all available as
   standard Python modules in PyPI)
-   - httplib2 https://pypi.python.org/pypi/httplib2/0.8
-   - pysmb https://pypi.python.org/pypi/pysmb/1.1.5 (only to use SMB
+   - [httplib2](https://pypi.python.org/pypi/httplib2/0.8)
+   - [pysmb](https://pypi.python.org/pypi/pysmb/1.1.5) (only to use SMB
      transports for artifact upload)
 
 * A working git command, only for automatic selection of repository
   name and branch name (this requirement can be sidestepped by using
-  the ''repo-name' and '--branch' command-line arguments)
+  the `--repo-name` and `--branch` command-line arguments)

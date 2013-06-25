@@ -789,7 +789,7 @@ parser.add_argument('--repo-base-url', '-u', default=','.join(REPO_URL), help='B
 parser.add_argument('--repo-name', '-r', help='name of repository to use' )
 parser.add_argument('--branch', '-b', help='branch to match against' )
 parser.add_argument('--extensions', '-e', help='extensions to consider as artifacts (default: '+','.join(DEFAULT_OPTIONS['extensions'])+')', default=None )
-parser.add_argument('--min_size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
+parser.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
 parser.add_argument('--overwrite', action='store_true', help='when uploading, overwrite the remote artifact definition for the current branch (default: %(default)s)' )
 parser.add_argument('operation', choices=['list','check','download','upload','purge','setoptions'], help='operation to execute: List artifacts in remote repo, check status of local artifacts,  download artifacts from repo or upload local artifacts' )
 parser.add_argument('dir', nargs='?', default=os.getcwd(), help='local folder to use (default: %(default)s)')
