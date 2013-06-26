@@ -1,0 +1,932 @@
+#!/usr/bin/env python
+
+"""
+A script to manage a remote repository for overlaying artifacts
+(binary files) on top of a local folder (typically a checked-out Git
+local repository, but not necessarily)
+
+Accepts as transport layers:
+  - HTTP for reading/downloading artifacts
+  - a locally visible folder for uploading
+  - An SMB R/W transport is in the works
+"""
+
+import os
+import sys
+import argparse
+import errno
+import subprocess
+import stat
+import re
+import ast
+import urllib2
+import hashlib
+import getpass
+from datetime import datetime
+from posixpath import join as posixjoin
+from ConfigParser import SafeConfigParser, NoSectionError, NoOptionError
+from socket import gethostname, gethostbyname
+
+from contextlib import closing
+try:
+    import cStringIO as StringIO
+except ImportError:
+    import StringIO
+try:
+    import smb.SMBConnection
+    from nmb.NetBIOS import NetBIOS
+    from mySMB import mySMBConnection
+except ImportError:
+    pass
+
+
+# Default URLs for the artifacts repository (as R & R/W transports)
+REPO_URL = ('http://artifacts.hi.inet',
+            r'\\oriente.hi.inet\artifacts')
+DOMAIN = 'HI'
+
+# Repository configuration 
+VERSION = 1
+OPTIONS = 'options'
+INDEX = 'index'
+REFS = 'refs'
+OBJECTS = 'objects'
+OPTIONS_SECTION = 'general'
+CHUNK = 8192
+
+# Default options
+DEFAULT_OPTIONS = { 'min_size' : 0,
+                    'extensions' : ('cache','dump','pkl',
+                                    'mat',
+                                    'rpm','deb',
+                                    'mpg','mp3','mp4',
+                                    'doc','docx','xls','xlsx','ppt','pptx',
+                                    'ps','pdf','odt','ods','odp',
+                                    'zip','tar','gz','rar') }
+
+README = """
+This folder contains a managed artifact repository, containing artifacts 
+to deploy on top of a local folder (typically a git-managed working area, 
+but not necessarily). Artifacts can be versioned, with the definition
+of "artifact branches" as sets of files that go together.
+
+It is operated by means of the 'artifact-manager' script. Do not modify
+files manually.
+
+Note: though its structure has a certain resemblance with a Git
+repository, it cannot be managed at all via Git commands.
+"""
+
+
+# ---------------------------------------------------------------------
+
+class GenericError( Exception ):
+    def __init__( self, exception_type, msg=None, *args ):
+        full_msg = exception_type + ': ' + msg if msg else exception_type
+        super(GenericError,self).__init__(full_msg,*args)
+        print self.args[0]
+        sys.exit(1)
+
+class TransportError( GenericError ):
+    def __init__( self, msg=None, *args ):
+        super(TransportError,self).__init__('Transport Error',msg,*args)
+
+class InvalidArgumentError( GenericError ):
+    def __init__( self, msg=None, *args ):
+        super(InvalidArgumentError,self).__init__('Invalid Argument',msg,*args)
+
+
+# ---------------------------------------------------------------------
+
+def parse_unc( unc, subpath ):
+    """
+    Parse a Windows UNC path, possibly including host, user, password, domain 
+    and share. The full specification of the UNC string is:
+
+                \\domain\user:password@host\share\path
+
+      @param unc (str): the UNC path. If it does not contain password
+        information, it will be prompted to the console
+      @param subpath (str): an optional subpath to add at the end of the 
+        UNC path
+      @return (dict): the result data, separated by component
+    """
+    m = re.match( r"""\\\\
+                      (?: (?: (?P<domain>[-.\w]+) \\ )?
+                              (?P<user>\w+)
+                              (?: : (?P<pass>\w+) )?
+                       @ )?
+                      (?P<host>[-.\w]+)
+                      \\
+                      (?P<share>[^\\]+)
+                      (?: \\
+                          (?P<path>.+) )?""", unc, re.X )
+    if not m:
+        raise InvalidArgumentError( 'can\'t understand SMB UNC: %' % unc )
+    d = m.groupdict()
+    if d['user'] is None:
+        d['user'] = os.getlogin()
+    if d['domain'] is None:
+        d['domain'] = DOMAIN
+    if d['pass'] is None:
+        d['pass'] = getpass.getpass("Please insert password for SMB user '{domain}\\{user}' on {host}: ".format( **d ) )
+    d['path'] = os.path.join(d['path'], subpath)  if d['path'] else subpath
+    #print d
+    return d
+
+def mkpath_recursive(path):
+    """Test a local path and, if it does not exist, create it recursively"""
+    try:
+        mode = os.stat( path ).st_mode
+        if not stat.S_ISDIR(mode):
+            raise InvalidArgumentError("parent path '"+str(path)+"' not a dir")
+    except OSError as e:
+        if e.errno != errno.ENOENT:
+            raise
+        (head,tail) = os.path.split( path )
+        if head:
+            mkpath_recursive( head )
+        os.mkdir( path )
+
+
+ 
+
+def git_find_info( what, repo_dir ):
+    """
+    Find information about a git repository. Try first calling the git
+    command line directly; if that fails search within git internals
+    """
+    class StrippedFile(file):
+        """A small helper class to read a config file with leading spaces"""
+        def readline(self):
+            return super(StrippedFile, self).readline().strip()
+
+    commands = { 'remote' : ['git','config','--get', 'remote.origin.url'],
+                 'branch' : ['git','rev-parse','--abbrev-ref','HEAD'] }
+    try:
+        cmd = commands[what]
+        output = subprocess.check_output(cmd,cwd=args.dir).rstrip()
+    except:
+        if what == 'remote':
+            c = SafeConfigParser()
+            with StrippedFile(os.path.join(repo_dir,'.git','config')) as f:
+                c.readfp(f)
+            output = c.get('remote "origin"','url')
+        else:
+            with open(os.path.join(repo_dir,'.git','HEAD')) as f:
+                data = f.readline().rstrip()
+            return data.split('/')[-1]
+
+    if what == 'remote':
+        (head,tail) = output.split(':')
+        (repo_name,ext) = os.path.splitext( tail )
+        return repo_name
+    else:
+        return output
+
+# ---------------------------------------------------------------------
+        
+
+class WebTransport( object ):
+    """
+    A read-only transport using HTTP to access a remote repository
+    """
+    def __init__(self, url_base, subrepo='', verbose=0):        
+        self._verbose = verbose
+        self._base = posixjoin( url_base, subrepo )
+        if not self._base.endswith('/'):
+            self._base += '/'
+
+    def get( self, source_name, dest ):
+        u = urllib2.urlopen( self._base + source_name )
+        meta = u.info()
+        file_size = int(meta.getheaders("Content-Length")[0])
+        file_name = source_name.split('/')[-1]
+        if self._verbose > 1:
+            print " .. downloading: %40s    size: %s" % (file_name, file_size)
+
+        file_size_dl = 0
+        block_sz = 8192
+        while True:
+            buffer = u.read(block_sz)
+            if not buffer:
+                break
+            file_size_dl += len(buffer)
+            dest.write(buffer)
+            #status = r"%10d  [%3.2f%%]" % (file_size_dl, file_size_dl * 100. / file_size)
+            #status = status + chr(8)*(len(status)+1)
+            #print status,
+
+    def exists( self, path ):
+        """
+        Test if a path exists in the repository, by sending a HEAD request
+          @return (bool): \c True or \c False depending on the status received
+            from the server
+        """
+        request = urllib2.Request(self._base + path)
+        request.get_method = lambda : 'HEAD'
+        try:
+            response = urllib2.urlopen(request)
+            return True
+        except urllib2.HTTPError as e:
+            if e.code == 404:
+                return False
+            raise
+            
+# ---------------------------------------------------------------------
+
+class BaseWTransport( object ):
+    """
+    A parent class providing some common functionality for R/W tranports
+    """
+
+    def folder_ensure( self, folder ):
+        """Ensure a path exists in the repository. Create it if not"""
+        if not folder:
+            raise InvalidArgumentError('empty folder')
+        t = self.check( folder )
+        if t == 'D':
+            return
+        elif t == 'F':
+            raise TransportError( "can't make folder: %s is a file" % folder )
+        (parent,name) = os.path.split( folder )
+        if parent:
+            self.folder_ensure( parent )
+        self.folder_create( folder )
+
+    def update( self, source, destname ):
+        """
+        Create or update a file in the repository, as atomically as possible
+        """
+        self.put( source, destname + '.new' )
+        self.rename( destname + '.new', destname )
+
+        
+
+
+class LocalTransport( BaseWTransport ):
+    """
+    A full R/W transport instance that uses a locally visible directory to 
+    store and read all artifact data
+    """
+
+    def __init__( self, basedir, subrepo ):
+        """
+        Constructor
+          @param basedir (str): local folder to use
+          @param subrepo (str): name of the repository we are dealing with
+        """
+        if not basedir:
+            raise InvalidArgumentError("Empty basedir in local transport")
+        if not subrepo:
+            raise InvalidArgumentError("Empty subrepo in local transport")
+        self._basedir = os.path.join(basedir,subrepo)
+        super(LocalTransport,self).__init__()
+
+    def init_base( self ):
+        """Ensure the base path for the repository exists"""
+        mkpath_recursive( self._basedir )
+        
+    def exists( self, path ):
+        """
+        Test if a path exists in the repository
+        """
+        check = self.check( path )
+        return check in ('F','D')
+
+    def get( self, sourcename, dest ):
+        """
+        Read a file into a file-like destination.
+        @param sourcename (str): name of the file in remote repo
+        @param dest (file): an object with a write() method
+        @return (bool): \c True if ok, \c False if the file does not exist
+        """
+        name = os.path.join(self._basedir,sourcename)
+        try:
+            with open(name, 'rb') as f:
+                while True:
+                    bytes = f.read( CHUNK )
+                    if not bytes:
+                        break
+                    dest.write( bytes )
+            return True
+        except IOError as e:
+            if e.errno == errno.ENOENT:
+                return False
+            raise
+        
+    def put( self, source, destname ):
+        """
+        Store a file. If a file with the same name existed, it is overwritten
+        @param source (file): an object with a read() method
+        @param destname (str): name of the destination file,
+        relative to repo base directory
+        """
+        name = os.path.join(self._basedir,destname)
+        with open(name, 'wb') as f:
+            while True:
+                bytes = source.read( CHUNK )
+                if not bytes:
+                    break
+                f.write( bytes )
+
+    def delete( self, filename ):
+        """
+        Delete a file
+        """
+        name = os.path.join(self._basedir,filename)
+        os.unlink( name )
+
+    def rename( self, oldname, newname ):
+        """
+        Rename a file into a new name and/or folder
+        """
+        oldname = os.path.join(self._basedir,oldname)
+        newname = os.path.join(self._basedir,newname)
+        os.rename( oldname, newname )
+
+    def check( self, path ):
+        """
+        Given a path component, return 'F' for a file, 
+        'D' for a directory, or \c None if the path does not exist
+        """
+        oldname = os.path.join(self._basedir,path)
+        try:
+            mode = os.stat( oldname ).st_mode
+        except OSError as e:
+            if e.errno == errno.ENOENT:
+                return None
+            raise
+        return 'D' if stat.S_ISDIR(mode) else 'F' if stat.S_ISREG(mode) else '?'
+
+    def folder_create( self, path ):
+        """
+        Make a folder in the repository, assuming all parent folders exist
+        """
+        os.mkdir( os.path.join(self._basedir,path) )
+
+    def folder_list( self, path ):
+        """
+        Return the list of all components (files & folders) in a folder
+        """
+        return os.listdir( os.path.join(self._basedir,path) )
+
+
+class SMBTransport( BaseWTransport ):
+    """
+    A full R/W transport connecting to a remote folder via a Windows
+    share (SMB protocol), using the pysmb module
+    **UNFINISHED WORK**
+    (there are pending authentication problems against oriente.hi.inet)
+    """
+    def __init__( self, url, subrepo ):
+        super(SMBTransport,self).__init__()
+        d = parse_unc( url, subrepo )
+        n = NetBIOS();  #r = n.queryName( d['host'] ); print r
+        smb_name = n.queryIPForName( gethostbyname(d['host']) ); 
+        #print "NAMES: ", smb_name
+        if True:
+            self.conn = mySMBConnection( d['user'], d['pass'], gethostname(), 
+                                         smb_name[0], domain=d['domain'], 
+                                         use_ntlm_v2 = False, 
+                                         sign_options = smb.SMBConnection.SMBConnection.SIGN_WHEN_SUPPORTED,
+                                         is_direct_tcp = False)
+            r = self.conn.connect( gethostbyname(d['host']), 139 )
+           #self.conn.close()
+        else:
+            self.conn = mySMBConnection( d['user'], d['pass'], gethostname(), 
+                                         smb_name[0], domain=d['domain'], 
+                                         use_ntlm_v2 = False, 
+                                         sign_options = smb.SMBConnection.SMBConnection.SIGN_WHEN_SUPPORTED,
+                                         is_direct_tcp = True)
+            r = self.conn.connect( gethostbyname(d['host']), 445 )
+        self.cdata = d
+
+    def init_base( self ):
+        """Ensure the base path for the repository exists"""
+        pass
+
+    def get( self, sourcename, dest ):
+        path = os.path.join( self.cdata['path'], sourcename )
+        self.conn.retrieveFile( self.cdata['share'], path, dest )
+
+    def put( self, source, destname ):
+        pass
+
+    def delete( self, filename ):
+        pass
+
+    def rename( self, oldname, newname ):
+        pass
+
+    def check( self, path ):
+        """
+        Given a path component, return 'F' for a file, 
+        'D' for a directory, or None if the path does not exist
+        """
+        pass
+
+    def folder_create( self, path ):
+        """
+        Make a folder in the repository, assuming all parent folders exist
+        """
+        pass
+
+    def folder_list( self, path ):
+        """
+        Return the list of all components (files & folders) in a folder
+        """
+        pass
+
+
+# ---------------------------------------------------------------------
+        
+
+def open_single_transport( url, subrepo, verbose ):
+    """Open a transport to a remote repo"""
+    #print url
+    if( url.startswith('http:') ):
+        return WebTransport( url, subrepo, verbose )
+    elif( url.startswith('\\') or url.startswith('smb:') ):
+        return SMBTransport( url, subrepo )
+    else:
+        return LocalTransport( url, subrepo )
+
+def open_transports( spec, subrepo, write=False, verbose=0 ):
+    """Open one (R) or two (R & R/W) transports to a remote repo"""
+    spec = spec.split(',')
+    reader = open_single_transport( spec[0], subrepo, verbose )
+    if not write:
+        return reader
+    if len(spec) == 1:
+        spec.append( spec[0] )
+    writer = open_single_transport( spec[1], subrepo, verbose )
+    return (reader,writer)
+
+def sha1_file( size, filename ):
+    """Compute a hash over a file, using the same spec that Git uses"""
+    s = hashlib.sha1()
+    s.update("blob %u\0" % size)
+    with open(filename,'rb') as f:
+        while True:
+            bytes = f.read(8192)
+            if not bytes:
+                break
+            s.update(bytes)
+    return s.hexdigest()  
+
+def fix_path(path):
+    """Normalize a local path, and ensure we use forward slashes"""
+    result = os.path.normpath(path)
+    if os.sep == '\\':
+        result = result.replace('\\', '/')
+    return result
+
+def size_string(size):
+    """Return a human-readable string for a size given in bytes"""
+    suffixes = ['','K','M','G','T']
+    suffixIndex = 0
+    precision = int(size > 1048576)
+    while size > 1024:
+        suffixIndex += 1 #increment the index of the suffix
+        size = size/1024.0 #apply the division
+    return "%.*f%s"%(precision,size,suffixes[suffixIndex])
+
+def object_remote_location( name ):
+    """Return the location of an object in the repository, as (path,basename)"""
+    return (OBJECTS + '/' + name[:2], name[2:])
+
+def write_options_to_cfg( options, cfg ):
+    """Convert argument options into a config object"""
+    cfg.add_section( OPTIONS_SECTION )
+    cfg.set( OPTIONS_SECTION,'VERSION','1')
+    for n in DEFAULT_OPTIONS:
+        cfg.set( 'general', n, str(getattr(options,n)) )
+
+def read_options_from_cfg( remote_cfg, command_line_options, obj ):
+    """
+    Insert options into an object. First set from defaults, then
+    override with the config of the remote repo, and finally override
+    with command-line options
+    """
+    # Check version
+    try:
+        v = remote_cfg.getint(OPTIONS_SECTION,'VERSION') 
+        if v > VERSION:
+            raise InvalidArgumentError( 'incompatible repository version: '+str(v) )
+    except NoSectionError:
+        remote_cfg.add_section( OPTIONS_SECTION )
+    except NoOptionError:
+        pass    
+    # Fill in options
+    for k in DEFAULT_OPTIONS:
+        # Set default
+        setattr(obj,k,DEFAULT_OPTIONS[k])
+        # Override with remote config
+        try:
+            value = remote_cfg.get(OPTIONS_SECTION,k)
+            setattr( obj, k, ast.literal_eval(value) )
+        except NoOptionError:
+            pass
+        except (SyntaxError,ValueError) as err:
+            raise TransportError( "Can't parse remote value for config option '"
+                                  + k + "': " + value )
+        # Finally, override with a command-line argument if defined
+        v = getattr(command_line_options,k)
+        if v is not None:
+            setattr(obj,k,v)
+    
+
+# ---------------------------------------------------------------------
+
+
+class ArtifactReader( object ):
+    """
+    A class to manage a remote artifact repository, only for read operations
+    (list remote listings, check against local artifacts & download
+    artifacts to sync local with remote)
+    """
+
+    def __init__(self, options ):
+        self.verbose = options.verbose
+        self.dry_run = options.dry_run
+        self._repo_config( options )
+        self.remote_index = self._get_index()
+        self.local_artifacts = {}
+
+    def _repo_config( self, options ):
+        """Prepare a configuration for a remote artifact repository"""
+        # Open the remote repository
+        self._repo_open( options.server_url, options.repo_name )
+        # Read remote options
+        with closing(StringIO.StringIO()) as buffer:
+            self.reader.get( OPTIONS, buffer )
+            buffer.seek( 0 )
+            config = SafeConfigParser()
+            config.readfp( buffer )
+        # Set the options, from defaults, remote config and command-line
+        read_options_from_cfg( config, options, self )
+        #print self.__dict__
+
+    def _repo_open( self, source, subrepo ):
+        """Open transport for reading"""
+        self.reader = open_transports( source, subrepo )
+        
+    def _get_index( self ):
+        """Get the index of the remote repository"""
+        with closing(StringIO.StringIO()) as buffer:
+            self.reader.get( INDEX, buffer )
+            index = {}
+            for line in buffer.getvalue().splitlines():
+                data = line.split(' ',4)
+                index[ data[0] ] = [ float(data[1]), int(data[2]), 
+                                     int(data[3],8), data[4] ]
+        return index
+
+
+    def remote_get_list( self, branch_string, return_none=False ):
+        """
+        Get the list of artifacts in the remote repo that correspond to a given 
+        branch
+          @param branch_string (str): name of the branch to fetch
+          @param return_none (bool): to return \c None if the branch does
+            not exist (otherwise an exception is raised)
+        """
+        name = REFS + '/' + branch_string
+        if return_none and not self.reader.exists( name ):
+            return None
+        with closing(StringIO.StringIO()) as buffer:
+            r = self.reader.get( name , buffer )
+            data = buffer.getvalue()
+        return data.splitlines()
+        
+
+    def remote_print_list( self, branch_string ):
+        """
+        Print out the list of artifacts in the remote repo that
+        correspond to a given branch
+        """
+        remote = self.remote_get_list(branch_string,return_none=True)
+        if remote is None:
+            print "Branch '%s' does not exist in artifact repo" % branch_string
+            return False
+        artifacts =  dict( (key,self.remote_index[key]) for key in remote )
+        #import pprint; pprint.pprint(artifacts)
+        if self.verbose:
+            print "\nList remote artifacts for '%s'" % branch_string
+        for k,v in sorted( artifacts.iteritems(), key=lambda e : e[1][3] ):
+            print '%s %6s %s' % (datetime.fromtimestamp(v[0]).strftime('%Y-%m-%d %H:%M %z'), size_string(v[1]), v[3] )
+        return True
+
+
+    def _local_collect_list( self, local_basedir ):
+        """
+        Get all artifacts in the local checked out repository, 
+        and populate the object's structure
+        """
+        current = os.getcwd()
+        os.chdir( local_basedir )
+        artifact_ext = set( map(lambda s : s.lower() if s.startswith('.') 
+                                           else '.'+s.lower(), 
+                                self.extensions) )
+        for root, dirs, files in os.walk( '.' ):
+            # Remote the directory with the Git metadata
+            try:
+                dirs.remove( '.git' )
+            except ValueError:
+                pass
+            # Push all the files that match conditions
+            for name in sorted(files):
+                (base,ext) = os.path.splitext( name )
+                fullname = fix_path( os.path.join(root,name) )
+                size = os.path.getsize(fullname)
+                #print ext, size
+                if ext.lower() in artifact_ext and size > self.min_size:
+                    s = [os.path.getmtime(fullname),size,0644,fullname]
+                    self.local_artifacts[sha1_file(size,fullname)] = s
+        os.chdir( current )
+
+
+    def local_check_list( self, local_basedir, branch_string ):
+        """
+        Compare the local artifacts with the ones in the remote repo,
+        and return the differences
+          @param local_basedir (str): the name of the local folder
+          @param branch_string (str): identifier for the branch in remote repo
+          @return a tuple of 
+             (<same files>, <files only in local>, <files only in remote>)
+        """
+        if not self.local_artifacts:
+            self._local_collect_list( local_basedir )
+        local  = set( self.local_artifacts.keys() )
+        remote = set( self.remote_get_list(branch_string) )
+        ok = local & remote
+        only_in_local = local - remote
+        only_in_remote = remote - local
+        return (ok, only_in_local, only_in_remote)
+
+
+    def local_print_changes( self, local_basedir, branch_string ):
+        """
+        Print out a summary of the comparison between the local artifacts 
+        and the contents in the remote repo
+        """
+        (ok, new, old) = self.local_check_list( local_basedir, branch_string )
+        status = dict( (k,'ok') for k in ok )
+        status.update( dict( (k,'NEW') for k in new ) )
+        status.update( dict( (k,'MISS') for k in old ) )
+        all_artifacts = self.local_artifacts.copy()
+        all_artifacts.update( dict( (key,self.remote_index[key]) 
+                                    for key in old ) )
+        #import pprint; pprint.pprint(all_artifacts )
+        #import pprint; pprint.pprint(status )
+        if self.verbose:
+            print "\nCheck local artifacts against '%s'" % branch_string
+        for k,v in sorted( all_artifacts.iteritems(), key=lambda e : e[1][3] ):
+            print '%4s  %s' % (status.get(k), v[3] )
+
+
+    def download_artifacts( self, branch_string, local_basedir, remove_old ):
+        """
+        Download to the local folder all artifacts in remote repo that
+        correspond to a given branch.
+          @param local_basedir (str): the name of the local folder
+          @param branch_string (str): identifier for the branch in remote repo
+          @param remove_old (bool): whether to delete local artifact files not
+            in the remote repo
+        """
+        if self.verbose:
+            print "\nDownload artifacts for '%s'" % branch_string
+            if self.dry_run:
+                print "** DRY RUN"
+        # Get the list of files in the branch
+        files = self.remote_get_list(branch_string,return_none=True)
+        if files is None:
+            print "Branch '%s' does not exist in artifact repo" % branch_string
+            return False
+        # Download each new/changed file
+        for name in files:
+            filedata = self.remote_index[name]
+            outname = os.path.join(local_basedir,filedata[3])
+            ok = os.path.exists(outname) and sha1_file(os.path.getsize(outname),
+                                                       outname) == name
+            if self.verbose:
+                status ="ok" if ok else "SRV" 
+                print '%4s: %s' % (status, filedata[3]),
+            if ok or self.dry_run:
+                print ""
+                continue
+            print "[DOWNLOADING]"
+            # Create the directory to put the file, if needed
+            (head,tail) = os.path.split( outname )
+            mkpath_recursive( head )
+            # Download the file
+            source_path = posixjoin( *object_remote_location(name) )
+            with open(outname,'wb') as f:
+                self.reader.get( source_path, f )
+            # Set permissions & modification time
+            os.chmod( outname, int(filedata[2]) )
+            os.utime( outname, (-1, float(filedata[0])) )
+
+        # Remove old files, if asked to
+        if remove_old:
+            (sam, loc, rem) = self.local_check_list(local_basedir,branch_string)
+            for obj in loc:
+                filedata = self.local_artifacts[obj]
+                if self.verbose:
+                    print '%4s: %s' % ('LOC', filedata[3]),
+                if self.dry_run:
+                    print ""
+                    continue
+                print '[REMOVING]'
+                outname = os.path.join(local_basedir,filedata[3])
+                os.unlink( outname )
+
+        return True
+
+
+# ---------------------------------------------------------------------
+
+class ArtifactManager( ArtifactReader ):
+    """
+    A class to manage a remote artifact repository, for both read
+    operations (download artifacts, check & compare artifact listings)
+    and write operations (initialize, upload artifacts)
+    """
+
+    def __init__( self, options ):
+        # Parent constructor will read the remote repository metadata
+        super(ArtifactManager,self).__init__( options )
+        # Now initialize the repository if it happens to be empty
+        if not self.writer.check( INDEX ) and not self.dry_run:
+            self.repo_init( options )
+
+    def _repo_open( self, source, subrepo ):
+        """Open transports for R/W"""
+        (self.reader,self.writer) = open_transports( source, subrepo, 
+                                                     write=True )
+
+    def repo_init( self, options ):
+        """
+        Initialize a new repository: write the folders and initial files
+        """
+        # Ensure the base folder for the repo is there
+        self.writer.init_base()
+        # Create the needed subfolders
+        self.writer.folder_create( OBJECTS )
+        self.writer.folder_create( REFS )
+        # Create README, index & options files
+        with closing(StringIO.StringIO(README)) as buffer:
+            self.writer.put( buffer, 'README' )
+        self.writer.put( StringIO.StringIO(), INDEX )
+        self.put_cfg()
+
+
+    def put_cfg( self ):
+        """Write the config options file in the remote repo"""
+        cfg = SafeConfigParser()
+        write_options_to_cfg( self, cfg )
+        with closing(StringIO.StringIO()) as buffer:
+            cfg.write( buffer )
+            buffer.seek( 0 )
+            self.writer.put( buffer, OPTIONS )
+
+    def put_object( self, source, name ):
+        dest_path = object_remote_location(name)
+        self.writer.folder_ensure( dest_path[0] )
+        self.writer.put( source, posixjoin(*dest_path) )
+
+
+    def put_branch_filelist( self, branch_string ):
+        """Put in the remote repository the list of objects for one branch"""
+        # Compose the final name & ensure the destination folder exists
+        dest_name = os.path.join( REFS, branch_string )
+        (head,tail) = os.path.split( dest_name )
+        if head:
+            self.writer.folder_ensure( head )
+        # Construct the file list
+        files = "\n".join( [item for item in sorted(self.local_artifacts)] )
+        # write it
+        with closing(StringIO.StringIO(files)) as buffer:
+            self.writer.update( buffer, dest_name )
+
+
+    def put_index( self ):
+        buffer = StringIO.StringIO()
+        for item in sorted(self.remote_index):
+            v = self.remote_index[item]
+            buffer.write( "{} {} {} 0{:o} {}\n".format( item, *v ) )
+        self.writer.update( StringIO.StringIO(buffer.getvalue()), INDEX )
+
+
+    def upload_artifacts( self, local_basedir, branch_string, overwrite=False ):
+        """
+        Upload all artifacts in the local directory to the remote repository
+          @param local_basedir (str): local directory containing artifacts
+          @param branch_string (str): identifier for the branch to upload to
+          @param overwrite (bool): if the branch already exists in the
+            remote repository, upload will fail unless this is \c True
+        """
+        # Check if this branch already has a remote entry, and bark if so
+        # and we're not in overwrite mode
+        remote = self.remote_get_list( branch_string, return_none=True )
+        if remote is not None and not overwrite:
+            if self.verbose:
+                print "Branch", branch_string, "already exists in repository"
+                print "Use --overwrite option to change it"
+            return False
+        # Collect all local artifact files; find out which ones are not yet in 
+        # the remote side
+        self._local_collect_list( local_basedir )
+        newf = dict( (a,self.local_artifacts[a])
+                     for a in self.local_artifacts 
+                     if a not in self.remote_index )
+        if self.verbose:
+            print "\nUploading local artifacts to '%s'" % branch_string
+            print "  total local artifacts: ", len(self.local_artifacts)
+            print "  already in repo: ", len(self.local_artifacts) - len(newf)
+            if self.dry_run: print "  ** DRY RUN"
+            #print self.local_artifacts
+        # Process each new file
+        for k,v in newf.iteritems():
+            if self.verbose:
+                print "   ... uploading: ", v[3]
+            if self.dry_run:
+                continue
+            # Send it to remote repo & add locally to index
+            with open( os.path.join(local_basedir,v[3])) as f:
+                self.put_object( f, k )
+            self.remote_index[k] = v
+        # Now put the list of files for this branch and update the remote index
+        if not self.dry_run:
+            self.put_branch_filelist( branch_string )
+            self.put_index()
+        return True
+
+
+
+
+# ***************************************************************************
+
+
+parser = argparse.ArgumentParser( description="Manage artifact check/download/upload against a remote repository. See https://pdihub.hi.inet/paulo/artifact-manager")
+
+parser.add_argument('--verbose', '-v', type=int, default=1, help='Verbose mode')
+parser.add_argument('--dry-run', action='store_true', help="don't modify files, locally or remotely" )
+parser.add_argument('--server-url', '-u', default=','.join(REPO_URL), help='Base URL for the artifact repository (default: %(default)s)' )
+parser.add_argument('--repo-name', '-r', help='name of repository to use' )
+parser.add_argument('--branch', '-b', help='branch to match against' )
+parser.add_argument('--extensions', '-e', help='extensions to consider as artifacts (default: '+','.join(DEFAULT_OPTIONS['extensions'])+')', default=None )
+parser.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
+parser.add_argument('--overwrite', action='store_true', help='when uploading, overwrite the remote artifact definition for the current branch (default: %(default)s)' )
+parser.add_argument('--delete-local', action='store_true', help='when downloading, remove from local directory the artifacts not present in the remote side (default: %(default)s)' )
+parser.add_argument('operation', choices=['list','check','download','upload','purge','setoptions'], help='operation to execute: List artifacts in remote repo, check status of local artifacts,  download artifacts from repo or upload local artifacts' )
+parser.add_argument('dir', nargs='?', default=os.getcwd(), help='local folder to use (default: %(default)s)')
+args = parser.parse_args()
+#print args
+
+# If not given, find out the name of the repository & branch from the
+# name of the git repo checked out in the local folder, and the
+# current checked out branch
+if not args.repo_name:
+    args.repo_name = git_find_info( 'remote', args.dir )
+if not args.branch:
+    args.branch = git_find_info( 'branch', args.dir )
+#print args
+
+# Split extensions
+if args.extensions is not None:
+    args.extensions = args.extensions.split(',')
+
+# Instantiate the manager class
+mgr_class = ArtifactManager if args.operation == 'upload' else ArtifactReader
+mgr = mgr_class( args )
+
+# Do the operation
+if args.operation == 'list':
+
+    r = mgr.remote_print_list( args.branch )
+    if not r:
+        sys.exit( 1 )
+
+elif args.operation == 'check':
+
+    mgr.local_print_changes( args.dir, args.branch )
+
+elif args.operation == 'download':
+
+    r = mgr.download_artifacts( args.branch, args.dir, args.delete_local )
+    if not r:
+        sys.exit( 1 )
+
+elif args.operation == 'upload':
+
+    r = mgr.upload_artifacts( args.dir, args.branch, args.overwrite ) 
+    if not r:
+        sys.exit( 1 )
+
+else:
+
+    print args.operation, "not implemented yet"
+    sys.exit(1)
+
