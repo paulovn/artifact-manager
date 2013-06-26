@@ -2,14 +2,13 @@
 
 """
 A script to manage a remote repository for overlaying artifacts
-(binary files) on top of a local folder (typically a checked-out git
-local repository)
+(binary files) on top of a local folder (typically a checked-out Git
+local repository, but not necessarily)
 
 Accepts as transport layers:
-  - HTTP for reading/downlading artifacts
+  - HTTP for reading/downloading artifacts
   - a locally visible folder for uploading
-
-An SMB R/W transport is in the works
+  - An SMB R/W transport is in the works
 """
 
 import os
@@ -21,7 +20,6 @@ import stat
 import re
 import ast
 import urllib2
-import httplib2
 import hashlib
 import getpass
 from datetime import datetime
@@ -58,13 +56,19 @@ CHUNK = 8192
 
 # Default options
 DEFAULT_OPTIONS = { 'min_size' : 0,
-                    'extensions' : ('cache','dump','pkl','mpg',
-                                    'doc','docx','pdf') }
+                    'extensions' : ('cache','dump','pkl',
+                                    'mat',
+                                    'rpm','deb',
+                                    'mpg','mp3','mp4',
+                                    'doc','docx','xls','xlsx','ppt','pptx',
+                                    'ps','pdf','odt','ods','odp',
+                                    'zip','tar','gz','rar') }
 
 README = """
-This folder contains a managed artifact repository, containing
-artifacts to deploy on top of a local folder (typically a git-managed
-working area).
+This folder contains a managed artifact repository, containing artifacts 
+to deploy on top of a local folder (typically a git-managed working area, 
+but not necessarily). Artifacts can be versioned, with the definition
+of "artifact branches" as sets of files that go together.
 
 It is operated by means of the 'artifact-manager' script. Do not modify
 files manually.
@@ -213,17 +217,21 @@ class WebTransport( object ):
             #status = status + chr(8)*(len(status)+1)
             #print status,
 
-    def exists( self, source_name ):
-        h = httplib2.Http()
-        resp = h.request( self._base + source_name, 'HEAD' )
-        status = int(resp[0]['status'])
-        if status == 200:
-            return True 
-        elif status == 404:
-            return False
-        else:
-            raise TransportError('error %s when checking %s' % (str(status),
-                                                                source_name))
+    def exists( self, path ):
+        """
+        Test if a path exists in the repository, by sending a HEAD request
+          @return (bool): \c True or \c False depending on the status received
+            from the server
+        """
+        request = urllib2.Request(self._base + path)
+        request.get_method = lambda : 'HEAD'
+        try:
+            response = urllib2.urlopen(request)
+            return True
+        except urllib2.HTTPError as e:
+            if e.code == 404:
+                return False
+            raise
             
 # ---------------------------------------------------------------------
 
@@ -279,12 +287,19 @@ class LocalTransport( BaseWTransport ):
         """Ensure the base path for the repository exists"""
         mkpath_recursive( self._basedir )
         
+    def exists( self, path ):
+        """
+        Test if a path exists in the repository
+        """
+        check = self.check( path )
+        return check in ('F','D')
+
     def get( self, sourcename, dest ):
         """
         Read a file into a file-like destination.
-          @param sourcename (str): name of the file in remote repo
-          @param dest (file): an object with a write() method
-          @return (bool): \c True if ok, \c False if the file does not exist
+        @param sourcename (str): name of the file in remote repo
+        @param dest (file): an object with a write() method
+        @return (bool): \c True if ok, \c False if the file does not exist
         """
         name = os.path.join(self._basedir,sourcename)
         try:
@@ -299,13 +314,13 @@ class LocalTransport( BaseWTransport ):
             if e.errno == errno.ENOENT:
                 return False
             raise
-            
+        
     def put( self, source, destname ):
         """
         Store a file. If a file with the same name existed, it is overwritten
-          @param source (file): an object with a read() method
-          @param destname (str): name of the destination file,
-            relative to repo base directory
+        @param source (file): an object with a read() method
+        @param destname (str): name of the destination file,
+        relative to repo base directory
         """
         name = os.path.join(self._basedir,destname)
         with open(name, 'wb') as f:
@@ -542,7 +557,7 @@ class ArtifactReader( object ):
     def _repo_config( self, options ):
         """Prepare a configuration for a remote artifact repository"""
         # Open the remote repository
-        self._repo_open( options.repo_base_url, options.repo_name )
+        self._repo_open( options.server_url, options.repo_name )
         # Read remote options
         with closing(StringIO.StringIO()) as buffer:
             self.reader.get( OPTIONS, buffer )
@@ -639,7 +654,7 @@ class ArtifactReader( object ):
           @param local_basedir (str): the name of the local folder
           @param branch_string (str): identifier for the branch in remote repo
           @return a tuple of 
-             (<same files>, <new local files>, <missing local files>)
+             (<same files>, <files only in local>, <files only in remote>)
         """
         if not self.local_artifacts:
             self._local_collect_list( local_basedir )
@@ -671,10 +686,14 @@ class ArtifactReader( object ):
             print '%4s  %s' % (status.get(k), v[3] )
 
 
-    def download_artifacts( self, branch_string, local_basedir ):
+    def download_artifacts( self, branch_string, local_basedir, remove_old ):
         """
         Download to the local folder all artifacts in remote repo that
-        correspond to a given branch
+        correspond to a given branch.
+          @param local_basedir (str): the name of the local folder
+          @param branch_string (str): identifier for the branch in remote repo
+          @param remove_old (bool): whether to delete local artifact files not
+            in the remote repo
         """
         if self.verbose:
             print "\nDownload artifacts for '%s'" % branch_string
@@ -692,10 +711,12 @@ class ArtifactReader( object ):
             ok = os.path.exists(outname) and sha1_file(os.path.getsize(outname),
                                                        outname) == name
             if self.verbose:
-                status ="ok" if ok else "DOWN" 
-                print '%4s: %s' % (status, filedata[3])
+                status ="ok" if ok else "SRV" 
+                print '%4s: %s' % (status, filedata[3]),
             if ok or self.dry_run:
+                print ""
                 continue
+            print "[DOWNLOADING]"
             # Create the directory to put the file, if needed
             (head,tail) = os.path.split( outname )
             mkpath_recursive( head )
@@ -706,6 +727,20 @@ class ArtifactReader( object ):
             # Set permissions & modification time
             os.chmod( outname, int(filedata[2]) )
             os.utime( outname, (-1, float(filedata[0])) )
+
+        # Remove old files, if asked to
+        if remove_old:
+            (sam, loc, rem) = self.local_check_list(local_basedir,branch_string)
+            for obj in loc:
+                filedata = self.local_artifacts[obj]
+                if self.verbose:
+                    print '%4s: %s' % ('LOC', filedata[3]),
+                if self.dry_run:
+                    print ""
+                    continue
+                print '[REMOVING]'
+                outname = os.path.join(local_basedir,filedata[3])
+                os.unlink( outname )
 
         return True
 
@@ -838,12 +873,13 @@ parser = argparse.ArgumentParser( description="Manage artifact check/download/up
 
 parser.add_argument('--verbose', '-v', type=int, default=1, help='Verbose mode')
 parser.add_argument('--dry-run', action='store_true', help="don't modify files, locally or remotely" )
-parser.add_argument('--repo-base-url', '-u', default=','.join(REPO_URL), help='Base URL for the artifact repository (default: %(default)s)' )
+parser.add_argument('--server-url', '-u', default=','.join(REPO_URL), help='Base URL for the artifact repository (default: %(default)s)' )
 parser.add_argument('--repo-name', '-r', help='name of repository to use' )
 parser.add_argument('--branch', '-b', help='branch to match against' )
 parser.add_argument('--extensions', '-e', help='extensions to consider as artifacts (default: '+','.join(DEFAULT_OPTIONS['extensions'])+')', default=None )
 parser.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
 parser.add_argument('--overwrite', action='store_true', help='when uploading, overwrite the remote artifact definition for the current branch (default: %(default)s)' )
+parser.add_argument('--delete-local', action='store_true', help='when downloading, remove from local directory the artifacts not present in the remote side (default: %(default)s)' )
 parser.add_argument('operation', choices=['list','check','download','upload','purge','setoptions'], help='operation to execute: List artifacts in remote repo, check status of local artifacts,  download artifacts from repo or upload local artifacts' )
 parser.add_argument('dir', nargs='?', default=os.getcwd(), help='local folder to use (default: %(default)s)')
 args = parser.parse_args()
@@ -856,7 +892,7 @@ if not args.repo_name:
     args.repo_name = git_find_info( 'remote', args.dir )
 if not args.branch:
     args.branch = git_find_info( 'branch', args.dir )
-print args
+#print args
 
 # Split extensions
 if args.extensions is not None:
@@ -879,7 +915,7 @@ elif args.operation == 'check':
 
 elif args.operation == 'download':
 
-    r = mgr.download_artifacts( args.branch, args.dir )
+    r = mgr.download_artifacts( args.branch, args.dir, args.delete_local )
     if not r:
         sys.exit( 1 )
 
