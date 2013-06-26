@@ -7,7 +7,7 @@ is defined by a list of artifacts (which may vary or repeat
 individually from branch to branch). Location info for each artifact
 in the project tree is preserved.
 
-It has been designed to play nicely with project hosted in a PDIHub
+It has been designed to play nicely with a project hosted in a PDIHub
 Git repository (i.e. it manages the files that cannot go into PDIHub
 since they are binary artifacts), but can also be used independently.
 
@@ -42,22 +42,22 @@ steps are as follows:
   will then be downloaded (over HTTP).
 
 * Whenever the project switches to another branch, executing again
-  `artifact-manager download --delete-old` will connect to the
+  `artifact-manager download --delete-local` will connect to the
   artifact repository and update the artifacts in the local directory
   to match the new branch (the script is smart enough to download only
   the new or changed files, which comes handy if those files are large).
 
-* For artifact upload, execute on the local folder the command
-  `artifact-manager --base-url <dir> upload` [1]. It will collect all
-  local artifacts and upload them to the server, labelling them as
-  belonging to the current branch [2]
+* For artifact upload, the command to be executed when positioned in the 
+  local folder is `artifact-manager --server-url <dir> upload` [1]. It will 
+  collect all local artifacts and upload them to the server, labelling them 
+  as belonging to the current checked-out branch [2]
 
 * If the local project changes to another branch, repeat the upload process
   and the local artifacts will be registered (and uploaded, if necessary) as 
   belonging to the new branch
 
 * Whenever there is variation in the local artifacts, issuing the command  
-  `artifact-manager --base-url <dir> upload --overwrite` will keep 
+  `artifact-manager --server-url <dir> upload --overwrite` will keep 
   the remote repository in sync with the local files. Note however that 
   the previous configuration for that branch will be lost: the server 
   keeps *only one version* of an artifact snapshot per branch
@@ -97,8 +97,7 @@ git repo, minus the `.git` suffix) and the artifact branch (the
 currently checked out branch). This selection can be overriden with
 command line parameters.
 
-
-In summmary, the parameters needed for operation that can be defined  are
+In summmary, the parameters needed for operation that can be defined are
 
 * Local project tree: use a positional argument; else the current
   working directory will be used
@@ -132,7 +131,7 @@ Other command-line options are:
 * --verbose <n>
 * --dry-run
 * --overwrite
-* --delete-old
+* --delete-local
 
 
 Requirements
