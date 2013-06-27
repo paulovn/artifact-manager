@@ -50,6 +50,7 @@ VERSION = 1
 OPTIONS = 'options'
 INDEX = 'index'
 REFS = 'refs'
+BRANCHES = 'branches'
 OBJECTS = 'objects'
 OPTIONS_SECTION = 'general'
 CHUNK = 8192
@@ -134,6 +135,7 @@ def parse_unc( unc, subpath ):
     #print d
     return d
 
+
 def mkpath_recursive(path):
     """Test a local path and, if it does not exist, create it recursively"""
     try:
@@ -148,8 +150,6 @@ def mkpath_recursive(path):
             mkpath_recursive( head )
         os.mkdir( path )
 
-
- 
 
 def git_find_info( what, repo_dir ):
     """
@@ -239,14 +239,14 @@ class WebTransport( object ):
             return True
         except ValueError as e:
             raise TransportError( "can't access '%s' : invalid url" % url )
-        except urllib2.URLError as e:
-            raise TransportError( "can't access '%s' : %s" % (url,
-                                                              str(e.reason)) )
         except urllib2.HTTPError as e:
             if e.code == 404:
                 return False
             raise TransportError( "can't access '%s' (%d): %s" % 
                                   (url,e.code,str(e.reason)) )
+        except urllib2.URLError as e:
+            raise TransportError( "can't access '%s' : %s" % (url,
+                                                              str(e.reason)) )
             
 # ---------------------------------------------------------------------
 
@@ -567,7 +567,14 @@ class ArtifactReader( object ):
         self.dry_run = options.dry_run
         self._repo_config( options )
         self.remote_index = self._get_index()
+        self.remote_branches = self._get_branches()
         self.local_artifacts = {}
+
+
+    def _repo_connect( self, source, subrepo ):
+        """Open transport for reading"""
+        self.reader = open_transports( source, subrepo )
+        
 
     def _repo_config( self, options ):
         """Prepare the configuration for the remote artifact repository"""
@@ -587,10 +594,7 @@ class ArtifactReader( object ):
         read_options_from_cfg( config, options, self )
         #print self.__dict__
 
-    def _repo_connect( self, source, subrepo ):
-        """Open transport for reading"""
-        self.reader = open_transports( source, subrepo )
-        
+
     def _get_index( self ):
         """Get the index of the remote repository"""
         index = {}
@@ -602,6 +606,16 @@ class ArtifactReader( object ):
                     index[ data[0] ] = [ float(data[1]), int(data[2]), 
                                          int(data[3],8), data[4] ]
         return index
+
+
+    def _get_branches( self ):
+        """Get the list of branches in the remote repository"""
+        branches = set()
+        if self.reader.exists( BRANCHES ):
+            with closing(StringIO.StringIO()) as buffer:
+                self.reader.get( BRANCHES, buffer )
+                branches.update( buffer.getvalue().splitlines() )
+        return branches
 
 
     def remote_get_list( self, branch_string, return_none=False ):
@@ -622,6 +636,17 @@ class ArtifactReader( object ):
             data = buffer.getvalue()
         return data.splitlines()
         
+
+    def remote_print_branches( self ):
+        """
+        Print out the list of branches in the remote repo
+        """
+        if self.verbose:
+            print "\nList remote branches"
+        for n in sorted(self.remote_branches):
+            print n
+        return True
+
 
     def remote_print_list( self, branch_string ):
         """
@@ -843,6 +868,13 @@ class ArtifactManager( ArtifactReader ):
         self.writer.update( StringIO.StringIO(buffer.getvalue()), INDEX )
 
 
+    def put_branches( self ):
+        buffer = StringIO.StringIO()
+        for b in sorted(self.remote_branches):
+            buffer.write( b )
+        self.writer.update( StringIO.StringIO(buffer.getvalue()), BRANCHES )
+
+
     def upload_artifacts( self, local_basedir, branch_string, overwrite=False ):
         """
         Upload all artifacts in the local directory to the remote repository
@@ -881,10 +913,14 @@ class ArtifactManager( ArtifactReader ):
             with open( os.path.join(local_basedir,v[3])) as f:
                 self.put_object( f, k )
             self.remote_index[k] = v
-        # Now put the list of files for this branch and update the remote index
+        # Now put the list of files for this branch and update remote indices
         if not self.dry_run:
             self.put_branch_filelist( branch_string )
-            self.put_index()
+            if branch_string not in self.remote_branches:
+                self.remote_branches.add( branch_string )
+                self.put_branches()
+            if len(newf):
+                self.put_index()
         return True
 
 
@@ -904,7 +940,7 @@ parser.add_argument('--extensions', '-e', help='extensions to consider as artifa
 parser.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
 parser.add_argument('--overwrite', action='store_true', help='when uploading, overwrite the remote artifact definition for the current branch (default: %(default)s)' )
 parser.add_argument('--delete-local', action='store_true', help='when downloading, remove from local directory the artifacts not present in the remote side (default: %(default)s)' )
-parser.add_argument('operation', choices=['list','check','download','upload','purge','setoptions'], help='operation to execute: List artifacts in remote repo, check status of local artifacts,  download artifacts from repo or upload local artifacts' )
+parser.add_argument('operation', choices=['list','check','download','upload','branches','purge','setoptions'], help='operation to execute: List artifacts in remote repo, check status of local artifacts, download artifacts from repo, upload local artifacts, list remote branches' )
 parser.add_argument('dir', nargs='?', default=os.getcwd(), help='local folder to use (default: %(default)s)')
 args = parser.parse_args()
 #print args
@@ -946,6 +982,12 @@ elif args.operation == 'download':
 elif args.operation == 'upload':
 
     r = mgr.upload_artifacts( args.dir, args.branch, args.overwrite ) 
+    if not r:
+        sys.exit( 1 )
+
+elif args.operation == 'branches':
+
+    r = mgr.remote_print_branches()
     if not r:
         sys.exit( 1 )
 

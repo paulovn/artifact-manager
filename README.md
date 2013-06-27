@@ -3,13 +3,28 @@ artifact-manager
 
 A Python script to manage a repository of project artifacts, possibly
 versioned.  Each repository contains a list of "branches"; each branch
-is defined by a list of artifacts (which may vary or repeat
-individually from branch to branch). Location info for each artifact
-in the project tree is preserved.
+is defined by a list of artifacts (which may vary or repeat individually 
+from branch to branch). Location info for each artifact in the project 
+tree is preserved.
 
 It has been designed to play nicely with a project hosted in a PDIHub
 Git repository (i.e. it manages the files that cannot go into PDIHub
-since they are binary artifacts), but can also be used independently.
+since they are binary artifacts), but can also be used independently. 
+
+Note also that the concept of "branch", while it maps well to Git
+branches, is not actually tied to them. A branch is actually no more
+than a name (a string) that refers to a set of objects (a list of
+artifacts), and can refer to anything in addition to an "actual" Git
+branch.
+
+An "artifact" in this context is a file in the project tree that
+matches the selection restrictions (basically file extension and file
+size).  A hash is computed for each artifact, so that if a file content 
+changes it will be detected as a new object event if its name and place 
+remains the same (for the server they _are_ two different objects, and 
+there is no relationship between them). Objects retain information about 
+their name, path in the project tree and modification time.
+
 
 It accepts the following operations:
 
@@ -23,6 +38,8 @@ It accepts the following operations:
 
  * __upload__  Upload all local artifacts to the repo, defining the set for
        the current branch. Only new/modified files will be uploaded
+
+ * __branches__ List available branches in the repo in the remote server
 
  * __purge__	  *future op*
 
@@ -49,8 +66,8 @@ steps are as follows:
 
 * For artifact upload, the command to be executed when positioned in the 
   local folder is `artifact-manager --server-url <dir> upload` [1]. It will 
-  collect all local artifacts and upload them to the server, labelling them 
-  as belonging to the current checked-out branch [2]
+  collect all local artifacts, upload the ones not yet in the server,
+  and label the set with the current checked-out branch [2]
 
 * If the local project changes to another branch, repeat the upload process
   and the local artifacts will be registered (and uploaded, if necessary) as 
@@ -70,15 +87,16 @@ what the script would do without actually doing it.
 order for this to work, the remote server must be locally mounted as a
 network disk (a native SMB transport layer is in the works)
 
-[2] The first time this command is executed on a project will create
+[2] The first time this command is executed on a project, it will create
 the artifact repository for that project in the repository server.
 
 [3] The only thing that gets overwritten is the _definition_ of the
-set of files in the branch. The files themselves do not get
-overwritten; if the same file (with the same path) has changed, a new
-copy is uploaded, but the previous one is preserved (since it may be
-still "alive" in another branch). The future `purge` operation will
-clean the repository from orphaned objects (files no longer in any branch)
+set of files covered by the branch. The files themselves do not get
+overwritten; if the same file (with the same path) has changed, it is
+uploaded as a new object, but the previous one is preserved (since it
+may still be "alive" in another branch). The future `purge` operation
+will clean the repository from orphaned objects (files no longer in
+any branch)
 
 
 
