@@ -165,8 +165,12 @@ def git_find_info( what, repo_dir ):
                  'branch' : ['git','rev-parse','--abbrev-ref','HEAD'] }
     try:
         cmd = commands[what]
-        output = subprocess.check_output(cmd,cwd=args.dir).rstrip()
-    except:
+        if sys.version_info < (2,7):
+            r = subprocess.Popen(cmd,cwd=args.dir,stdout=subprocess.PIPE).communicate()[0]
+        else:
+            r = subprocess.check_output(cmd,cwd=args.dir)
+        output = r.rstrip()
+    except Exception as e:
         if what == 'remote':
             c = SafeConfigParser()
             with StrippedFile(os.path.join(repo_dir,'.git','config')) as f:
@@ -175,7 +179,7 @@ def git_find_info( what, repo_dir ):
         else:
             with open(os.path.join(repo_dir,'.git','HEAD')) as f:
                 data = f.readline().rstrip()
-            return data.split('/')[-1]
+            return data.split('refs/heads/')[-1]
 
     if what == 'remote':
         (head,tail) = output.split(':')
@@ -863,7 +867,7 @@ class ArtifactManager( ArtifactReader ):
         buffer = StringIO.StringIO()
         for item in sorted(self.remote_index):
             v = self.remote_index[item]
-            buffer.write( "{} {} {} 0{:o} {}\n".format( item, *v ) )
+            buffer.write( "{0} {1} {2} 0{3:o} {4}\n".format( item, *v ) )
         self.writer.update( StringIO.StringIO(buffer.getvalue()), INDEX )
 
 

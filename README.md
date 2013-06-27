@@ -170,7 +170,14 @@ Other command-line options are:
 Requirements
 ------------
 
-* Python 2.7 (probably also Python 2.6)
+It needs either
+
+* Python 2.7, or
+
+* Python 2.6 + the [argparse](https://pypi.python.org/pypi/argparse)
+  Python package (which is part of the Python Standard Library in 2.7)
+
+and, optionally,
 
 * The [pysmb](https://pypi.python.org/pypi/pysmb/1.1.5) Python module,
   only to use SMB transports for artifact upload
