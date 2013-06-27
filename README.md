@@ -60,8 +60,11 @@ steps are as follows:
   `artifact-manager --server-url <dir> upload --overwrite` will keep 
   the remote repository in sync with the local files. Note however that 
   the previous configuration for that branch will be lost: the server 
-  keeps *only one version* of an artifact snapshot per branch
+  keeps *only one version* of an artifact snapshot per branch [3].
 
+
+On each of these operations the option `--dry-run` can be used to test
+what the script would do without actually doing it.
 
 [1] Currently the only working R/W transport is a local folder, so in
 order for this to work, the remote server must be locally mounted as a
@@ -70,6 +73,12 @@ network disk (a native SMB transport layer is in the works)
 [2] The first time this command is executed on a project will create
 the artifact repository for that project in the repository server.
 
+[3] The only thing that gets overwritten is the _definition_ of the
+set of files in the branch. The files themselves do not get
+overwritten; if the same file (with the same path) has changed, a new
+copy is uploaded, but the previous one is preserved (since it may be
+still "alive" in another branch). The future `purge` operation will
+clean the repository from orphaned objects (files no longer in any branch)
 
 
 
@@ -114,7 +123,7 @@ be tried first; if not available the ".git" directory will be searched.
 Execution options
 -----------------
 
-Options defining the behaviour are:
+Options modifying the detection of artifact files are:
 
 * `--extensions` : a comma-separated list of the file extensions (with or
   without a leading period) that will be collected as artifacts
@@ -128,10 +137,14 @@ used henceforth. It can be overriden at runtime for a given execution.
 
 Other command-line options are:
 
-* --verbose <n>
-* --dry-run
-* --overwrite
-* --delete-local
+* `--verbose <n>`: level of verbosity (default is 1)
+* `--dry-run` do not actually modify either local or remote files
+* `--overwrite`: when uploading, if the branch already exists overwrite its
+  definition. Without this option the upload operation will fails.
+* `--delete-local`: when downloading, delete detected local artifacts
+  that do not appear in the object list for the current
+  branch. Othwerwise they are left alone.
+
 
 
 Requirements

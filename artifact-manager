@@ -62,7 +62,7 @@ DEFAULT_OPTIONS = { 'min_size' : 0,
                                     'mpg','mp3','mp4',
                                     'doc','docx','xls','xlsx','ppt','pptx',
                                     'ps','pdf','odt','ods','odp',
-                                    'zip','tar','gz','rar') }
+                                    'zip','tar','gz','bz2','rar') }
 
 README = """
 This folder contains a managed artifact repository, containing artifacts 
@@ -198,6 +198,12 @@ class WebTransport( object ):
             self._base += '/'
 
     def get( self, source_name, dest ):
+        """
+        Get a file given its path, and store its contents in the 
+        file-like object given.
+        Any HTTP access or fetch error will generate an exception. To
+        ensure the file is there before trying, use the exists() method.
+        """
         u = urllib2.urlopen( self._base + source_name )
         meta = u.info()
         file_size = int(meta.getheaders("Content-Length")[0])
@@ -222,16 +228,25 @@ class WebTransport( object ):
         Test if a path exists in the repository, by sending a HEAD request
           @return (bool): \c True or \c False depending on the status received
             from the server
+          @except TransportError on any access errors other than a 404
+            (Not Found) status code.
         """
-        request = urllib2.Request(self._base + path)
+        url = self._base + path
+        request = urllib2.Request(url)
         request.get_method = lambda : 'HEAD'
         try:
             response = urllib2.urlopen(request)
             return True
+        except ValueError as e:
+            raise TransportError( "can't access '%s' : invalid url" % url )
+        except urllib2.URLError as e:
+            raise TransportError( "can't access '%s' : %s" % (url,
+                                                              str(e.reason)) )
         except urllib2.HTTPError as e:
             if e.code == 404:
                 return False
-            raise
+            raise TransportError( "can't access '%s' (%d): %s" % 
+                                  (url,e.code,str(e.reason)) )
             
 # ---------------------------------------------------------------------
 
@@ -445,7 +460,7 @@ class SMBTransport( BaseWTransport ):
 def open_single_transport( url, subrepo, verbose ):
     """Open a transport to a remote repo"""
     #print url
-    if( url.startswith('http:') ):
+    if( url.startswith('http:') or url.startswith('https:') ):
         return WebTransport( url, subrepo, verbose )
     elif( url.startswith('\\') or url.startswith('smb:') ):
         return SMBTransport( url, subrepo )
@@ -555,32 +570,37 @@ class ArtifactReader( object ):
         self.local_artifacts = {}
 
     def _repo_config( self, options ):
-        """Prepare a configuration for a remote artifact repository"""
+        """Prepare the configuration for the remote artifact repository"""
         # Open the remote repository
-        self._repo_open( options.server_url, options.repo_name )
+        self._repo_connect( options.server_url, options.repo_name )
         # Read remote options
-        with closing(StringIO.StringIO()) as buffer:
-            self.reader.get( OPTIONS, buffer )
-            buffer.seek( 0 )
-            config = SafeConfigParser()
-            config.readfp( buffer )
+        config = SafeConfigParser()
+        if not self.reader.exists( OPTIONS ):
+            if self.verbose:
+                print "Warning: repository",options.repo_name,"not initialized"
+        else:
+            with closing(StringIO.StringIO()) as buffer:
+                self.reader.get( OPTIONS, buffer )
+                buffer.seek( 0 )
+                config.readfp( buffer )
         # Set the options, from defaults, remote config and command-line
         read_options_from_cfg( config, options, self )
         #print self.__dict__
 
-    def _repo_open( self, source, subrepo ):
+    def _repo_connect( self, source, subrepo ):
         """Open transport for reading"""
         self.reader = open_transports( source, subrepo )
         
     def _get_index( self ):
         """Get the index of the remote repository"""
-        with closing(StringIO.StringIO()) as buffer:
-            self.reader.get( INDEX, buffer )
-            index = {}
-            for line in buffer.getvalue().splitlines():
-                data = line.split(' ',4)
-                index[ data[0] ] = [ float(data[1]), int(data[2]), 
-                                     int(data[3],8), data[4] ]
+        index = {}
+        if self.reader.exists( INDEX ):
+            with closing(StringIO.StringIO()) as buffer:
+                self.reader.get( INDEX, buffer )
+                for line in buffer.getvalue().splitlines():
+                    data = line.split(' ',4)
+                    index[ data[0] ] = [ float(data[1]), int(data[2]), 
+                                         int(data[3],8), data[4] ]
         return index
 
 
@@ -594,6 +614,8 @@ class ArtifactReader( object ):
         """
         name = REFS + '/' + branch_string
         if return_none and not self.reader.exists( name ):
+            if self.verbose:
+                print "Warning: branch '%s' not in remote repo" % branch_string
             return None
         with closing(StringIO.StringIO()) as buffer:
             r = self.reader.get( name , buffer )
@@ -608,7 +630,6 @@ class ArtifactReader( object ):
         """
         remote = self.remote_get_list(branch_string,return_none=True)
         if remote is None:
-            print "Branch '%s' does not exist in artifact repo" % branch_string
             return False
         artifacts =  dict( (key,self.remote_index[key]) for key in remote )
         #import pprint; pprint.pprint(artifacts)
@@ -659,7 +680,8 @@ class ArtifactReader( object ):
         if not self.local_artifacts:
             self._local_collect_list( local_basedir )
         local  = set( self.local_artifacts.keys() )
-        remote = set( self.remote_get_list(branch_string) )
+        remote = self.remote_get_list(branch_string,return_none=True)
+        remote = set(remote) if remote is not None else set()
         ok = local & remote
         only_in_local = local - remote
         only_in_remote = remote - local
@@ -673,8 +695,8 @@ class ArtifactReader( object ):
         """
         (ok, new, old) = self.local_check_list( local_basedir, branch_string )
         status = dict( (k,'ok') for k in ok )
-        status.update( dict( (k,'NEW') for k in new ) )
-        status.update( dict( (k,'MISS') for k in old ) )
+        status.update( dict( (k,'LOC') for k in new ) )
+        status.update( dict( (k,'SRV') for k in old ) )
         all_artifacts = self.local_artifacts.copy()
         all_artifacts.update( dict( (key,self.remote_index[key]) 
                                     for key in old ) )
@@ -761,7 +783,7 @@ class ArtifactManager( ArtifactReader ):
         if not self.writer.check( INDEX ) and not self.dry_run:
             self.repo_init( options )
 
-    def _repo_open( self, source, subrepo ):
+    def _repo_connect( self, source, subrepo ):
         """Open transports for R/W"""
         (self.reader,self.writer) = open_transports( source, subrepo, 
                                                      write=True )
@@ -770,6 +792,8 @@ class ArtifactManager( ArtifactReader ):
         """
         Initialize a new repository: write the folders and initial files
         """
+        if self.verbose:
+            print "Info: initializing repository",options.repo_name
         # Ensure the base folder for the repo is there
         self.writer.init_base()
         # Create the needed subfolders
