@@ -41,6 +41,8 @@ It accepts the following operations:
 
  * __branches__ List available branches in the repo in the remote server
 
+ * __remove-branch__ *future op*
+
  * __purge__	  *future op*
 
  * __setoptions__ *future op*

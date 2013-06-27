@@ -642,9 +642,8 @@ class ArtifactReader( object ):
         Print out the list of branches in the remote repo
         """
         if self.verbose:
-            print "\nList remote branches"
-        for n in sorted(self.remote_branches):
-            print n
+            print "\n# List remote branches"
+        print "\n".join( sorted(self.remote_branches) )
         return True
 
 
@@ -659,7 +658,7 @@ class ArtifactReader( object ):
         artifacts =  dict( (key,self.remote_index[key]) for key in remote )
         #import pprint; pprint.pprint(artifacts)
         if self.verbose:
-            print "\nList remote artifacts for '%s'" % branch_string
+            print "\n# List remote artifacts for '%s'" % branch_string
         for k,v in sorted( artifacts.iteritems(), key=lambda e : e[1][3] ):
             print '%s %6s %s' % (datetime.fromtimestamp(v[0]).strftime('%Y-%m-%d %H:%M %z'), size_string(v[1]), v[3] )
         return True
@@ -728,7 +727,7 @@ class ArtifactReader( object ):
         #import pprint; pprint.pprint(all_artifacts )
         #import pprint; pprint.pprint(status )
         if self.verbose:
-            print "\nCheck local artifacts against '%s'" % branch_string
+            print "\n# Check local artifacts against '%s'" % branch_string
         for k,v in sorted( all_artifacts.iteritems(), key=lambda e : e[1][3] ):
             print '%4s  %s' % (status.get(k), v[3] )
 
@@ -743,7 +742,7 @@ class ArtifactReader( object ):
             in the remote repo
         """
         if self.verbose:
-            print "\nDownload artifacts for '%s'" % branch_string
+            print "\n# Download artifacts for '%s'" % branch_string
             if self.dry_run:
                 print "** DRY RUN"
         # Get the list of files in the branch
@@ -818,7 +817,7 @@ class ArtifactManager( ArtifactReader ):
         Initialize a new repository: write the folders and initial files
         """
         if self.verbose:
-            print "Info: initializing repository",options.repo_name
+            print "# Info: initializing repository",options.repo_name
         # Ensure the base folder for the repo is there
         self.writer.init_base()
         # Create the needed subfolders
@@ -870,8 +869,7 @@ class ArtifactManager( ArtifactReader ):
 
     def put_branches( self ):
         buffer = StringIO.StringIO()
-        for b in sorted(self.remote_branches):
-            buffer.write( b )
+        buffer.write( "\n".join(sorted(self.remote_branches)) )
         self.writer.update( StringIO.StringIO(buffer.getvalue()), BRANCHES )
 
 
@@ -898,7 +896,7 @@ class ArtifactManager( ArtifactReader ):
                      for a in self.local_artifacts 
                      if a not in self.remote_index )
         if self.verbose:
-            print "\nUploading local artifacts to '%s'" % branch_string
+            print "\n# Uploading local artifacts to '%s'" % branch_string
             print "  total local artifacts: ", len(self.local_artifacts)
             print "  already in repo: ", len(self.local_artifacts) - len(newf)
             if self.dry_run: print "  ** DRY RUN"
