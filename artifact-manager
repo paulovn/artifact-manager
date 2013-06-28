@@ -718,6 +718,8 @@ class ArtifactReader( object ):
                 for name in files:
                     (base,ext) = os.path.splitext( name )
                     fullname = fix_path( os.path.join(root,name) )
+                    if os.path.islink( fullname ):
+                        continue        # skip symbolic links to files
                     size = os.path.getsize(fullname)
                     #print ext, size
                     if ext.lower() in artifact_ext and size > self.min_size:
