@@ -107,7 +107,7 @@ Transports
 
 Available transports to connect to the remote repository are:
 
-* HTTP for read-only operations (list, check, download)
+* HTTP for read-only operations (list, check, branches, download)
 * Local folder for upload operations (a remote repo can be uploaded to if its folder is mounted as a network disk)
 * SMB (_in the works_) for upload operations
 
@@ -149,9 +149,14 @@ Options modifying the detection of artifact files are:
   without a leading period) that will be collected as artifacts
 * `--min-size`: the minimum size of an artifact file to be included in
   the list (0 for files of any size)
+* `--git-ignored`: select as artifacts all files that will be ignored
+  by git, as defined in the checked out repo. This option needs a
+  working command-line git, and when used the script ignores the other
+  options `--extensions` and `--min-size`
+
 
 These are settable _per repository_: when the remote repository is
-created (upon first artifact upload) the _extensions/min-size_
+created (upon first artifact upload) the _extensions/min-size/git-ignored_
 definitions at that time are stored as repository configuration, and
 used henceforth. It can be overriden at runtime for a given execution.
 

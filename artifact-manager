@@ -56,7 +56,8 @@ OPTIONS_SECTION = 'general'
 CHUNK = 8192
 
 # Default options
-DEFAULT_OPTIONS = { 'min_size' : 0,
+DEFAULT_OPTIONS = { 'git_ignored' : False,
+                    'min_size' : 0,
                     'extensions' : ('cache','dump','pkl',
                                     'mat',
                                     'rpm','deb',
@@ -162,16 +163,26 @@ def git_find_info( what, repo_dir ):
             return super(StrippedFile, self).readline().strip()
 
     commands = { 'remote' : ['git','config','--get', 'remote.origin.url'],
-                 'branch' : ['git','rev-parse','--abbrev-ref','HEAD'] }
+                 'branch' : ['git','rev-parse','--abbrev-ref','HEAD'],
+                 'ignored' : ['git','ls-files','-o','-i', '--exclude-standard']
+               }
+
+    # Execute git. If that fails, try digging into .git repo dir directly
     try:
+
         cmd = commands[what]
         if sys.version_info < (2,7):
-            r = subprocess.Popen(cmd,cwd=args.dir,stdout=subprocess.PIPE).communicate()[0]
+            r = subprocess.Popen(cmd,cwd=repo_dir,stdout=subprocess.PIPE).communicate()[0]
         else:
-            r = subprocess.check_output(cmd,cwd=args.dir)
+            r = subprocess.check_output(cmd,cwd=repo_dir)
         output = r.rstrip()
+
     except Exception as e:
-        if what == 'remote':
+
+        print e
+        if what == 'ignored':
+            raise InvalidArgumentError("can't use --git-ignored option: git execution failed: " + str(e) )
+        elif what == 'remote':
             c = SafeConfigParser()
             with StrippedFile(os.path.join(repo_dir,'.git','config')) as f:
                 c.readfp(f)
@@ -181,10 +192,13 @@ def git_find_info( what, repo_dir ):
                 data = f.readline().rstrip()
             return data.split('refs/heads/')[-1]
 
+    # Terminate output parsing
     if what == 'remote':
         (head,tail) = output.split(':')
         (repo_name,ext) = os.path.splitext( tail )
         return repo_name
+    elif what == 'ignored':
+        return output.splitlines()
     else:
         return output
 
@@ -668,6 +682,13 @@ class ArtifactReader( object ):
         return True
 
 
+    def _add_local_file( self, fullname, size=None ):
+        if size is None:
+            size = os.path.getsize(fullname)
+        s = [os.path.getmtime(fullname), size, 0644, fullname]
+        self.local_artifacts[sha1_file(size,fullname)] = s
+
+
     def _local_collect_list( self, local_basedir ):
         """
         Get all artifacts in the local checked out repository, 
@@ -675,25 +696,34 @@ class ArtifactReader( object ):
         """
         current = os.getcwd()
         os.chdir( local_basedir )
-        artifact_ext = set( map(lambda s : s.lower() if s.startswith('.') 
-                                           else '.'+s.lower(), 
-                                self.extensions) )
-        for root, dirs, files in os.walk( '.' ):
-            # Remote the directory with the Git metadata
-            try:
-                dirs.remove( '.git' )
-            except ValueError:
-                pass
-            # Push all the files that match conditions
-            for name in sorted(files):
-                (base,ext) = os.path.splitext( name )
-                fullname = fix_path( os.path.join(root,name) )
-                size = os.path.getsize(fullname)
-                #print ext, size
-                if ext.lower() in artifact_ext and size > self.min_size:
-                    s = [os.path.getmtime(fullname),size,0644,fullname]
-                    self.local_artifacts[sha1_file(size,fullname)] = s
-        os.chdir( current )
+        try:
+            if self.git_ignored:
+                for fullname in git_find_info( 'ignored', '.' ):
+                    self._add_local_file( fullname )
+                return
+
+            artifact_ext = set( map(lambda s : s.lower() if s.startswith('.') 
+                                    else '.'+s.lower(), 
+                                    self.extensions) )
+
+            for root, dirs, files in os.walk( '.' ):
+
+                # Remove the directory with the Git metadata
+                try:
+                    dirs.remove( '.git' )
+                except ValueError:
+                    pass
+
+                # Push all the files that match conditions
+                for name in files:
+                    (base,ext) = os.path.splitext( name )
+                    fullname = fix_path( os.path.join(root,name) )
+                    size = os.path.getsize(fullname)
+                    #print ext, size
+                    if ext.lower() in artifact_ext and size > self.min_size:
+                        self._add_local_file( fullname, size )
+        finally:
+            os.chdir( current )
 
 
     def local_check_list( self, local_basedir, branch_string ):
@@ -930,71 +960,74 @@ class ArtifactManager( ArtifactReader ):
 
 # ***************************************************************************
 
+if __name__ == "__main__":
 
-parser = argparse.ArgumentParser( description="Manage artifact check/download/upload against a remote repository. See https://pdihub.hi.inet/paulo/artifact-manager")
+    # Define & read command-line options
+    parser = argparse.ArgumentParser( description="Manage artifact check/download/upload against a remote repository. See https://pdihub.hi.inet/paulo/artifact-manager")
 
-parser.add_argument('--verbose', '-v', type=int, default=1, help='Verbose mode')
-parser.add_argument('--dry-run', action='store_true', help="don't modify files, locally or remotely" )
-parser.add_argument('--server-url', '-u', default=','.join(REPO_URL), help='Base URL for the artifact repository (default: %(default)s)' )
-parser.add_argument('--repo-name', '-r', help='name of repository to use' )
-parser.add_argument('--branch', '-b', help='branch to match against' )
-parser.add_argument('--extensions', '-e', help='extensions to consider as artifacts (default: '+','.join(DEFAULT_OPTIONS['extensions'])+')', default=None )
-parser.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
-parser.add_argument('--overwrite', action='store_true', help='when uploading, overwrite the remote artifact definition for the current branch (default: %(default)s)' )
-parser.add_argument('--delete-local', action='store_true', help='when downloading, remove from local directory the artifacts not present in the remote side (default: %(default)s)' )
-parser.add_argument('operation', choices=['list','check','download','upload','branches','purge','setoptions'], help='operation to execute: List artifacts in remote repo, check status of local artifacts, download artifacts from repo, upload local artifacts, list remote branches' )
-parser.add_argument('dir', nargs='?', default=os.getcwd(), help='local folder to use (default: %(default)s)')
-args = parser.parse_args()
-#print args
+    parser.add_argument('--verbose', '-v', type=int, default=1, help='Verbose mode')
+    parser.add_argument('--dry-run', action='store_true', help="don't modify files, locally or remotely" )
+    parser.add_argument('--server-url', '-u', default=','.join(REPO_URL), help='Base URL for the artifact repository (default: %(default)s)' )
+    parser.add_argument('--repo-name', '-r', help='name of repository to use' )
+    parser.add_argument('--branch', '-b', help='branch to match against' )
+    parser.add_argument('--extensions', '-e', help='extensions to consider as artifacts (default: '+','.join(DEFAULT_OPTIONS['extensions'])+')', default=None )
+    parser.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
+    parser.add_argument('--git-ignored', action='store_true', help='include all files ignored by git in the local repo' )
+    parser.add_argument('--overwrite', action='store_true', help='when uploading, overwrite the remote artifact definition for the current branch (default: %(default)s)' )
+    parser.add_argument('--delete-local', action='store_true', help='when downloading, remove from local directory the artifacts not present in the remote side (default: %(default)s)' )
+    parser.add_argument('operation', choices=['list','check','download','upload','branches','purge','setoptions'], help='operation to execute: List artifacts in remote repo, check status of local artifacts, download artifacts from repo, upload local artifacts, list remote branches' )
+    parser.add_argument('dir', nargs='?', default=os.getcwd(), help='local folder to use (default: %(default)s)')
+    args = parser.parse_args()
+    #print args
 
-# If not given, find out the name of the repository & branch from the
-# name of the git repo checked out in the local folder, and the
-# current checked out branch
-if not args.repo_name:
-    args.repo_name = git_find_info( 'remote', args.dir )
-if not args.branch:
-    args.branch = git_find_info( 'branch', args.dir )
-#print args
+    # If not given, find out the name of the repository & branch from the
+    # name of the git repo checked out in the local folder, and the
+    # current checked out branch
+    if not args.repo_name:
+        args.repo_name = git_find_info( 'remote', args.dir )
+    if not args.branch:
+        args.branch = git_find_info( 'branch', args.dir )
+    #print args
 
-# Split extensions
-if args.extensions is not None:
-    args.extensions = args.extensions.split(',')
+    # Split extensions
+    if args.extensions is not None:
+        args.extensions = args.extensions.split(',')
 
-# Instantiate the manager class
-mgr_class = ArtifactManager if args.operation == 'upload' else ArtifactReader
-mgr = mgr_class( args )
+    # Instantiate the manager class
+    mgr_class = ArtifactManager if args.operation == 'upload' else ArtifactReader
+    mgr = mgr_class( args )
 
-# Do the operation
-if args.operation == 'list':
+    # Do the operation
+    if args.operation == 'list':
 
-    r = mgr.remote_print_list( args.branch )
-    if not r:
-        sys.exit( 1 )
+        r = mgr.remote_print_list( args.branch )
+        if not r:
+            sys.exit( 1 )
 
-elif args.operation == 'check':
+    elif args.operation == 'check':
 
-    mgr.local_print_changes( args.dir, args.branch )
+        mgr.local_print_changes( args.dir, args.branch )
 
-elif args.operation == 'download':
+    elif args.operation == 'download':
 
-    r = mgr.download_artifacts( args.branch, args.dir, args.delete_local )
-    if not r:
-        sys.exit( 1 )
+        r = mgr.download_artifacts( args.branch, args.dir, args.delete_local )
+        if not r:
+            sys.exit( 1 )
 
-elif args.operation == 'upload':
+    elif args.operation == 'upload':
 
-    r = mgr.upload_artifacts( args.dir, args.branch, args.overwrite ) 
-    if not r:
-        sys.exit( 1 )
+        r = mgr.upload_artifacts( args.dir, args.branch, args.overwrite ) 
+        if not r:
+            sys.exit( 1 )
 
-elif args.operation == 'branches':
+    elif args.operation == 'branches':
 
-    r = mgr.remote_print_branches()
-    if not r:
-        sys.exit( 1 )
+        r = mgr.remote_print_branches()
+        if not r:
+            sys.exit( 1 )
 
-else:
+    else:
 
-    print args.operation, "not implemented yet"
-    sys.exit(1)
+        print args.operation, "not implemented yet"
+        sys.exit(1)
 
