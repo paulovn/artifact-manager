@@ -66,18 +66,21 @@ DEFAULT_OPTIONS = { 'git_ignored' : False,
                                     'ps','pdf','odt','ods','odp',
                                     'zip','tar','gz','bz2','rar') }
 
+WHEREAMI = 'https://pdihub.hi.inet/paulo/artifact-manager'
 README = """
 This folder contains a managed artifact repository, containing artifacts 
 to deploy on top of a local folder (typically a git-managed working area, 
-but not necessarily). Artifacts can be versioned, with the definition
-of "artifact branches" as sets of files that go together.
+but not necessarily). Artifacts can be versioned, using the definition
+of "artifact branches" as "sets of files that go together".
 
 It is operated by means of the 'artifact-manager' script. Do not modify
 files manually.
 
 Note: though its structure has a certain resemblance with a Git
 repository, it cannot be managed at all via Git commands.
-"""
+
+For further information, see:
+""" + WHEREAMI
 
 
 # ---------------------------------------------------------------------
@@ -965,7 +968,7 @@ class ArtifactManager( ArtifactReader ):
 if __name__ == "__main__":
 
     # Define & read command-line options
-    parser = argparse.ArgumentParser( description="Manage artifact check/download/upload against a remote repository. See https://pdihub.hi.inet/paulo/artifact-manager")
+    parser = argparse.ArgumentParser( description="Manage artifact check/download/upload against a remote repository. See " + WHEREAMI)
 
     parser.add_argument('--verbose', '-v', type=int, default=1, help='Verbose mode')
     parser.add_argument('--dry-run', action='store_true', help="don't modify files, locally or remotely" )

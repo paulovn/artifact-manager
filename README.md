@@ -19,7 +19,7 @@ branch.
 
 An "artifact" in this context is a file in the project tree that
 matches the selection restrictions (basically file extension and file
-size).  A hash is computed for each artifact, so that if a file content 
+size).  A hash is computed for each artifact, so that if the file contents 
 changes it will be detected as a new object event if its name and place 
 remains the same (for the server they _are_ two different objects, and 
 there is no relationship between them). Objects retain information about 
@@ -69,7 +69,7 @@ steps are as follows:
 * For artifact upload, the command to be executed when positioned in the 
   local folder is `artifact-manager --server-url <dir> upload` [1]. It will 
   collect all local artifacts, upload the ones not yet in the server,
-  and label the set with the current checked-out branch [2]
+  and label the set in the server with the current checked-out branch [2]
 
 * If the local project changes to another branch, repeat the upload process
   and the local artifacts will be registered (and uploaded, if necessary) as 
@@ -84,6 +84,7 @@ steps are as follows:
 
 On each of these operations the option `--dry-run` can be used to test
 what the script would do without actually doing it.
+
 
 [1] Currently the only working R/W transport is a local folder, so in
 order for this to work, the remote server must be locally mounted as a
@@ -108,8 +109,9 @@ Transports
 Available transports to connect to the remote repository are:
 
 * HTTP for read-only operations (list, check, branches, download)
-* Local folder for upload operations (a remote repo can be uploaded to if its folder is mounted as a network disk)
+* Local folder for upload operations (to be able to upload to a remote repo, mount it locally as a network disk)
 * SMB (_in the works_) for upload operations
+
 
 
 Repository specification
@@ -167,8 +169,8 @@ Other command-line options are:
 * `--overwrite`: when uploading, if the branch already exists overwrite its
   definition. Without this option the upload operation will fails.
 * `--delete-local`: when downloading, delete detected local artifacts
-  that do not appear in the object list for the current
-  branch. Othwerwise they are left alone.
+  that do not appear in the object list for the current branch. Otherwise they
+  are left alone.
 
 
 
