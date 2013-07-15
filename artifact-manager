@@ -47,7 +47,7 @@ REPO_URL = ('http://artifacts.hi.inet',
 DOMAIN = 'HI'
 
 # Repository configuration 
-VERSION = 1
+VERSION = 2
 OPTIONS = 'options'
 INDEX = 'index'
 REFS = 'refs'
@@ -59,6 +59,7 @@ CHUNK = 8192
 # Default options
 DEFAULT_OPTIONS = { 'git_ignored' : False,
                     'min_size' : 0,
+                    'files' : (),
                     'extensions' : ('cache','dump','pkl',
                                     'mat',
                                     'rpm','deb',
@@ -555,7 +556,7 @@ def object_remote_location( name ):
 def write_options_to_cfg( options, cfg ):
     """Convert argument options into a config object"""
     cfg.add_section( OPTIONS_SECTION )
-    cfg.set( OPTIONS_SECTION,'VERSION','1')
+    cfg.set( OPTIONS_SECTION,'VERSION',str(VERSION))
     for n in DEFAULT_OPTIONS:
         cfg.set( 'general', n, str(getattr(options,n)) )
 
@@ -728,6 +729,7 @@ class ArtifactReader( object ):
             artifact_ext = set( map(lambda s : s.lower() if s.startswith('.') 
                                     else '.'+s.lower(), 
                                     self.extensions) )
+            full_files = set( self.files )
 
             for root, dirs, files in os.walk( '.' ):
 
@@ -745,7 +747,8 @@ class ArtifactReader( object ):
                         continue        # skip symbolic links to files
                     size = os.path.getsize(fullname)
                     #print ext, size
-                    if ext.lower() in artifact_ext and size > self.min_size:
+                    if (fullname in full_files or 
+                        (ext.lower() in artifact_ext and size > self.min_size)):
                         self._add_local_file( fullname, size )
         finally:
             os.chdir( current )
@@ -998,6 +1001,7 @@ if __name__ == "__main__":
     parser.add_argument('--repo-name', '-r', help='name of repository to use' )
     parser.add_argument('--branch', '-b', help='branch to match against' )
     parser.add_argument('--extensions', '-e', help='extensions to consider as artifacts (default: '+','.join(DEFAULT_OPTIONS['extensions'])+')', default=None )
+    parser.add_argument('--files', '-f', help='files to add explicitly (full path)', default=None, nargs='+' )
     parser.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
     parser.add_argument('--git-ignored', action='store_true', help='include all files ignored by git in the local repo' )
     parser.add_argument('--overwrite', action='store_true', help='when uploading, overwrite the remote artifact definition for the current branch (default: %(default)s)' )
@@ -1021,7 +1025,7 @@ if __name__ == "__main__":
         args.extensions = args.extensions.split(',')
 
     # Instantiate the manager class
-    mgr_class = ArtifactManager if args.operation == 'upload' else ArtifactReader
+    mgr_class = ArtifactManager if args.operation in ('upload','setoptions') else ArtifactReader
     mgr = mgr_class( args )
 
     # Do the operation
@@ -1035,6 +1039,12 @@ if __name__ == "__main__":
 
         mgr.local_print_changes( args.dir, args.branch )
 
+    elif args.operation == 'branches':
+
+        r = mgr.remote_print_branches()
+        if not r:
+            sys.exit( 1 )
+
     elif args.operation == 'download':
 
         r = mgr.download_artifacts( args.branch, args.dir, args.delete_local )
@@ -1047,9 +1057,11 @@ if __name__ == "__main__":
         if not r:
             sys.exit( 1 )
 
-    elif args.operation == 'branches':
+    elif args.operation == 'setoptions':
 
-        r = mgr.remote_print_branches()
+        if args.verbose:
+            print "\n# Setting repository options in remote server"
+        r = mgr.put_cfg()
         if not r:
             sys.exit( 1 )
 

@@ -32,6 +32,8 @@ It accepts the following operations:
 
  * __check__ Compare the artifacts in the local tree with the remote repo
 
+ * __branches__ List available branches in the repo in the remote server
+
  * __download__  Fetch artifacts for the current branch from the repo.
      Only new & modified artifacts will be downloaded. They will be
      left in their defined places in the project tree.
@@ -39,13 +41,14 @@ It accepts the following operations:
  * __upload__  Upload all local artifacts to the repo, defining the set for
        the current branch. Only new/modified files will be uploaded
 
- * __branches__ List available branches in the repo in the remote server
+ * __setoptions__ Take the currently defined options (the ones fetched from
+       the server, modified by any command-line arguments) and store them
+       as repository options
 
  * __remove-branch__ *future op*
 
  * __purge__	  *future op*
 
- * __setoptions__ *future op*
 
 
 Intended PDIHub workflow
@@ -151,16 +154,24 @@ Options modifying the detection of artifact files are:
   without a leading period) that will be collected as artifacts
 * `--min-size`: the minimum size of an artifact file to be included in
   the list (0 for files of any size)
+* `--files`: files to be explicitly included as artifacts, if they exist,
+  regardless of size. This is a multi-argument options: include as many files
+  as needed, separated by spaces. Note that the option must *not* be immediately
+  followed by any positional arguments (such as the operation, or the local 
+  folder), or they will be taken as file names.
 * `--git-ignored`: select as artifacts all files that will be ignored
   by git, as defined in the checked out repo. This option needs a
-  working command-line git, and when used the script ignores the other
-  options `--extensions` and `--min-size`
+  working command-line git.
 
+The script uses both (`extensions' + `min-size') and `files' so they can be 
+freely combined. `git-ignored', however, is an exclusive argument: when used, 
+the script ignores `--extensions`, `--min-size` and `files'
 
 These are settable _per repository_: when the remote repository is
-created (upon first artifact upload) the _extensions/min-size/git-ignored_
+created (upon first artifact upload) the _extensions/min-size/files/git-ignored_
 definitions at that time are stored as repository configuration, and
-used henceforth. It can be overriden at runtime for a given execution.
+used henceforth. It can be overriden at runtime for a given execution, or 
+re-stored with the *setoptions* operation.
 
 Other command-line options are:
 
