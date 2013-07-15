@@ -24,6 +24,7 @@ import hashlib
 import getpass
 from datetime import datetime
 from posixpath import join as posixjoin
+from HTMLParser import HTMLParser
 from ConfigParser import SafeConfigParser, NoSectionError, NoOptionError
 from socket import gethostname, gethostbyname
 
@@ -67,21 +68,40 @@ DEFAULT_OPTIONS = { 'git_ignored' : False,
                                     'zip','tar','gz','bz2','rar') }
 
 WHEREAMI = 'https://pdihub.hi.inet/paulo/artifact-manager'
-README = """
+README = """<html><body>
+<p>
 This folder contains a managed artifact repository, containing artifacts 
 to deploy on top of a local folder (typically a git-managed working area, 
 but not necessarily). Artifacts can be versioned, using the definition
 of "artifact branches" as "sets of files that go together".
-
+</p>
+<p>
 It is operated by means of the 'artifact-manager' script. Do not modify
 files manually.
-
+</p>
+<p>
 Note: though its structure has a certain resemblance with a Git
 repository, it cannot be managed at all via Git commands.
+</p>
+<p>For further information, see:
+<a href=\"""" + WHEREAMI + """">""" + WHEREAMI + """</a>
+</p>
+</body></html>"""
 
-For further information, see:
-""" + WHEREAMI
 
+class MLStripper(HTMLParser):
+    def __init__(self):
+        self.reset()
+        self.fed = []
+    def handle_data(self, d):
+        self.fed.append(d)
+    def get_data(self):
+        return ''.join(self.fed)
+
+def strip_tags(html):
+    s = MLStripper()
+    s.feed(html)
+    return s.get_data()
 
 # ---------------------------------------------------------------------
 
@@ -864,6 +884,8 @@ class ArtifactManager( ArtifactReader ):
         self.writer.folder_create( REFS )
         # Create README, index & options files
         with closing(StringIO.StringIO(README)) as buffer:
+            self.writer.put( buffer, 'README.html' )
+        with closing(StringIO.StringIO(strip_tags(README))) as buffer:
             self.writer.put( buffer, 'README' )
         self.writer.put( StringIO.StringIO(), INDEX )
         self.put_cfg()
