@@ -163,15 +163,16 @@ Options modifying the detection of artifact files are:
   by git, as defined in the checked out repo. This option needs a
   working command-line git.
 
-The script uses both (`extensions' + `min-size') and `files' so they can be 
-freely combined. `git-ignored', however, is an exclusive argument: when used, 
-the script ignores `--extensions`, `--min-size` and `files'
+The script accepts both (`--extensions` + `--min-size`) and `--files` at the 
+same time, so they can be freely combined. `--git-ignored`, however, is an 
+exclusive argument: when used, the script ignores `--extensions`, `--min-size` 
+and `--files`.
 
 These are settable _per repository_: when the remote repository is
 created (upon first artifact upload) the _extensions/min-size/files/git-ignored_
 definitions at that time are stored as repository configuration, and
 used henceforth. It can be overriden at runtime for a given execution, or 
-re-stored with the *setoptions* operation.
+re-stored with the __setoptions__ operation.
 
 Other command-line options are:
 

@@ -684,7 +684,7 @@ class ArtifactReader( object ):
         Print out the list of branches in the remote repo
         """
         if self.verbose:
-            print "\n# List remote branches"
+            print "\n# Info: list remote branches"
         print "\n".join( sorted(self.remote_branches) )
         return True
 
@@ -700,7 +700,7 @@ class ArtifactReader( object ):
         artifacts =  dict( (key,self.remote_index[key]) for key in remote )
         #import pprint; pprint.pprint(artifacts)
         if self.verbose:
-            print "\n# List remote artifacts for '%s'" % branch_string
+            print "\n# Info: list remote artifacts for '%s'" % branch_string
         for k,v in sorted( artifacts.iteritems(), key=lambda e : e[1][3] ):
             print '%s %6s %s' % (datetime.fromtimestamp(v[0]).strftime('%Y-%m-%d %H:%M %z'), size_string(v[1]), v[3] )
         return True
@@ -789,7 +789,7 @@ class ArtifactReader( object ):
         #import pprint; pprint.pprint(all_artifacts )
         #import pprint; pprint.pprint(status )
         if self.verbose:
-            print "\n# Check local artifacts against '%s'" % branch_string
+            print "\n# Info: check local artifacts against '%s'" % branch_string
         for k,v in sorted( all_artifacts.iteritems(), key=lambda e : e[1][3] ):
             print '%4s  %s' % (status.get(k), v[3] )
 
@@ -804,7 +804,7 @@ class ArtifactReader( object ):
             in the remote repo
         """
         if self.verbose:
-            print "\n# Download artifacts for '%s'" % branch_string
+            print "\n# Info: download artifacts for '%s'" % branch_string
             if self.dry_run:
                 print "** DRY RUN"
         # Get the list of files in the branch
@@ -879,7 +879,7 @@ class ArtifactManager( ArtifactReader ):
         Initialize a new repository: write the folders and initial files
         """
         if self.verbose:
-            print "# Info: initializing repository",options.repo_name
+            print "\n# Info: initializing repository",options.repo_name
         # Ensure the base folder for the repo is there
         self.writer.init_base()
         # Create the needed subfolders
@@ -898,6 +898,12 @@ class ArtifactManager( ArtifactReader ):
         """Write the config options file in the remote repo"""
         cfg = SafeConfigParser()
         write_options_to_cfg( self, cfg )
+        if self.verbose:
+            print "\n# Info: setting repository options in remote server"
+            cfg.write( sys.stdout )
+        if self.dry_run:
+            print "** DRY RUN"
+            return
         with closing(StringIO.StringIO()) as buffer:
             cfg.write( buffer )
             buffer.seek( 0 )
@@ -950,7 +956,7 @@ class ArtifactManager( ArtifactReader ):
         remote = self.remote_get_list( branch_string, return_none=True )
         if remote is not None and not overwrite:
             if self.verbose:
-                print "Branch", branch_string, "already exists in repository"
+                print "Error: branch", branch_string, "already exists in repository"
                 print "Use --overwrite option to change it"
             return False
         # Collect all local artifact files; find out which ones are not yet in 
@@ -960,7 +966,7 @@ class ArtifactManager( ArtifactReader ):
                      for a in self.local_artifacts 
                      if a not in self.remote_index )
         if self.verbose:
-            print "\n# Uploading local artifacts to '%s'" % branch_string
+            print "\n# Info: Uploading local artifacts to '%s'" % branch_string
             print "  total local artifacts: ", len(self.local_artifacts)
             print "  already in repo: ", len(self.local_artifacts) - len(newf)
             if self.dry_run: print "  ** DRY RUN"
@@ -1059,8 +1065,6 @@ if __name__ == "__main__":
 
     elif args.operation == 'setoptions':
 
-        if args.verbose:
-            print "\n# Setting repository options in remote server"
         r = mgr.put_cfg()
         if not r:
             sys.exit( 1 )
