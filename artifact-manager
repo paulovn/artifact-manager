@@ -85,7 +85,7 @@ Note: though its structure has a certain resemblance with a Git
 repository, it cannot be managed at all via Git commands.
 </p>
 <p>For further information, see:
-<a href=\"""" + WHEREAMI + """">""" + WHEREAMI + """</a>
+<a href=\"""" + WHEREAMI + """\">""" + WHEREAMI + """</a>
 </p>
 </body></html>"""
 
