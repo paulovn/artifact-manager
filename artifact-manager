@@ -549,6 +549,9 @@ def size_string(size):
         size = size/1024.0 #apply the division
     return "%.*f%s"%(precision,size,suffixes[suffixIndex])
 
+def item_string(entry):
+    return '%s %6s %s' % (datetime.fromtimestamp(entry[0]).strftime('%Y-%m-%d %H:%M %z'), size_string(entry[1]), entry[3] )
+
 def object_remote_location( name ):
     """Return the location of an object in the repository, as (path,basename)"""
     return (OBJECTS + '/' + name[:2], name[2:])
@@ -679,13 +682,15 @@ class ArtifactReader( object ):
         return data.splitlines()
         
 
-    def remote_print_branches( self ):
+    def remote_print_branches( self, current_branch='' ):
         """
         Print out the list of branches in the remote repo
         """
         if self.verbose:
             print "\n# Info: list remote branches"
-        print "\n".join( sorted(self.remote_branches) )
+        for b in sorted(self.remote_branches):
+            print '*' if b == current_branch else ' ',
+            print b
         return True
 
 
@@ -702,7 +707,7 @@ class ArtifactReader( object ):
         if self.verbose:
             print "\n# Info: list remote artifacts for '%s'" % branch_string
         for k,v in sorted( artifacts.iteritems(), key=lambda e : e[1][3] ):
-            print '%s %6s %s' % (datetime.fromtimestamp(v[0]).strftime('%Y-%m-%d %H:%M %z'), size_string(v[1]), v[3] )
+            print item_string(v)
         return True
 
 
@@ -754,6 +759,17 @@ class ArtifactReader( object ):
             os.chdir( current )
 
 
+    def _compare_lists( self, collection1, collection2 ):
+        """
+        Compare two lists of items
+        """
+        c1 = set( collection1 ) if collection1 is not None else set()
+        c2 = set( collection2 ) if collection2 is not None else set()
+        both = c1 & c2
+        only_c1 = c1 - c2
+        only_c2 = c2 - c1
+        return (both, only_c1, only_c2)
+
     def local_check_list( self, local_basedir, branch_string ):
         """
         Compare the local artifacts with the ones in the remote repo,
@@ -767,11 +783,35 @@ class ArtifactReader( object ):
             self._local_collect_list( local_basedir )
         local  = set( self.local_artifacts.keys() )
         remote = self.remote_get_list(branch_string,return_none=True)
-        remote = set(remote) if remote is not None else set()
-        ok = local & remote
-        only_in_local = local - remote
-        only_in_remote = remote - local
-        return (ok, only_in_local, only_in_remote)
+        return self._compare_lists( self.local_artifacts.keys(), remote )
+
+    def _print_diff( self, lists, index ):
+        """
+        """
+        for k,v in lists.iteritems():
+            if not v:
+                continue
+            print '**', k
+            for v in sorted( v, key=lambda e : index[e][3] ):
+                print item_string(index[v])
+
+    def diff( self, branch1, branch2 ):
+        """
+        Compare two branches
+          @param branch1 (str): the name of the 1st branch
+          @param branch2 (str): the name of the 2nd branch
+          @return a tuple of 
+             (<same files>, <files only in local>, <files only in remote>)
+        """
+        list1 = self.remote_get_list(branch1,return_none=True)
+        list2 = self.remote_get_list(branch2,return_none=True)
+        results = self._compare_lists( list1, list2 )
+        if self.verbose:
+            print "\n# Info: compare branches '%s' & '%s'" % (branch1,branch2)
+        lists = dict( zip( ('in both','only in '+branch1,'only in '+branch2),
+                           results ) )
+        self._print_diff( lists, self.remote_index )
+        return True
 
 
     def local_print_changes( self, local_basedir, branch_string ):
@@ -851,6 +891,16 @@ class ArtifactReader( object ):
                 os.unlink( outname )
 
         return True
+
+    def get_cfg( self ):
+        """
+        Get the options in the remote repo
+        """
+        cfg = SafeConfigParser()
+        write_options_to_cfg( self, cfg )
+        if self.verbose:
+            print "\n# Info: get options from remote repo"
+        cfg.write( sys.stdout )
 
 
 # ---------------------------------------------------------------------
@@ -1005,14 +1055,15 @@ if __name__ == "__main__":
     parser.add_argument('--dry-run', action='store_true', help="don't modify files, locally or remotely" )
     parser.add_argument('--server-url', '-u', default=','.join(REPO_URL), help='Base URL for the artifact repository (default: %(default)s)' )
     parser.add_argument('--repo-name', '-r', help='name of repository to use' )
-    parser.add_argument('--branch', '-b', help='branch to match against' )
+    parser.add_argument('--branch', '-b', help='set the current branch' )
+    parser.add_argument('--other-branch', '-ob', help='the other branch to compare to' )
     parser.add_argument('--extensions', '-e', help='extensions to consider as artifacts (default: '+','.join(DEFAULT_OPTIONS['extensions'])+')', default=None )
     parser.add_argument('--files', '-f', help='files to add explicitly (full path)', default=None, nargs='+' )
     parser.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
     parser.add_argument('--git-ignored', action='store_true', help='include all files ignored by git in the local repo' )
     parser.add_argument('--overwrite', action='store_true', help='when uploading, overwrite the remote artifact definition for the current branch (default: %(default)s)' )
     parser.add_argument('--delete-local', action='store_true', help='when downloading, remove from local directory the artifacts not present in the remote side (default: %(default)s)' )
-    parser.add_argument('operation', choices=['list','check','download','upload','branches','purge','setoptions'], help='operation to execute: List artifacts in remote repo, check status of local artifacts, download artifacts from repo, upload local artifacts, list remote branches' )
+    parser.add_argument('operation', choices=['list','diff','download','upload','branches','setoptions','getoptions'], help='operation to execute: List artifacts in remote repo, compare artifact lists, download artifacts from repo, upload local artifacts, list remote branches,set repo options' )
     parser.add_argument('dir', nargs='?', default=os.getcwd(), help='local folder to use (default: %(default)s)')
     args = parser.parse_args()
     #print args
@@ -1041,13 +1092,18 @@ if __name__ == "__main__":
         if not r:
             sys.exit( 1 )
 
-    elif args.operation == 'check':
-
-        mgr.local_print_changes( args.dir, args.branch )
-
     elif args.operation == 'branches':
 
-        r = mgr.remote_print_branches()
+        r = mgr.remote_print_branches( args.branch )
+        if not r:
+            sys.exit( 1 )
+
+    elif args.operation == 'diff' or args.operation == 'check':
+
+        if args.other_branch:
+            r = mgr.diff( args.branch, args.other_branch )
+        else:
+            r = mgr.local_print_changes( args.dir, args.branch )
         if not r:
             sys.exit( 1 )
 
@@ -1066,6 +1122,12 @@ if __name__ == "__main__":
     elif args.operation == 'setoptions':
 
         r = mgr.put_cfg()
+        if not r:
+            sys.exit( 1 )
+
+    elif args.operation == 'getoptions':
+
+        r = mgr.get_cfg()
         if not r:
             sys.exit( 1 )
 

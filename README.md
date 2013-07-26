@@ -30,7 +30,8 @@ It accepts the following operations:
 
  * __list__  List the artifacts stored in a remote repo for a given branch
 
- * __check__ Compare the artifacts in the local tree with the remote repo
+ * __diff__ Compare the artifacts in the local tree with the branch in the 
+     remote repo, or compare two branches in the remote repo
 
  * __branches__ List available branches in the repo in the remote server
 
@@ -39,11 +40,14 @@ It accepts the following operations:
      left in their defined places in the project tree.
 
  * __upload__  Upload all local artifacts to the repo, defining the set for
-       the current branch. Only new/modified files will be uploaded
+     the current branch. Only new/modified files will be uploaded
+
+ * __getoptions__ Show the options currently defined (the ones fetched from
+     the server, modified by any command-line arguments)
 
  * __setoptions__ Take the currently defined options (the ones fetched from
-       the server, modified by any command-line arguments) and store them
-       as repository options
+     the server, modified by any command-line arguments) and store them
+     as repository options
 
  * __remove-branch__ *future op*
 
@@ -183,7 +187,8 @@ Other command-line options are:
 * `--delete-local`: when downloading, delete detected local artifacts
   that do not appear in the object list for the current branch. Otherwise they
   are left alone.
-
+* `--other-branch': when comparing artifacts, compare the current branch against
+   another branch in the remote repo, instead of against the local files
 
 
 Requirements
