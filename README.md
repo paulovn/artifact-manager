@@ -155,14 +155,17 @@ Execution options
 Options modifying the detection of artifact files are:
 
 * `--extensions` : a comma-separated list of the file extensions (with or
-  without a leading period) that will be collected as artifacts
+  without a leading period) that will be collected as artifacts. Note that if 
+  the file name contains several dots, only the rightmost dot-extension will 
+  be considered.
 * `--min-size`: the minimum size of an artifact file to be included in
   the list (0 for files of any size)
 * `--files`: files to be explicitly included as artifacts, if they exist,
   regardless of size. This is a multi-argument options: include as many files
   as needed, separated by spaces. Note that the option must *not* be immediately
   followed by any positional arguments (such as the operation, or the local 
-  folder), or they will be taken as file names.
+  folder), or they will be taken as file names. It accepts shell-like globbing,
+  with the `*`, `?` and `[charset]` metacharacters.
 * `--git-ignored`: select as artifacts all files that will be ignored
   by git, as defined in the checked out repo. This option needs a
   working command-line git.

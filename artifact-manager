@@ -22,6 +22,7 @@ import ast
 import urllib2
 import hashlib
 import getpass
+import glob
 from datetime import datetime
 from posixpath import join as posixjoin
 from HTMLParser import HTMLParser
@@ -85,9 +86,9 @@ Note: though its structure has a certain resemblance with a Git
 repository, it cannot be managed at all via Git commands.
 </p>
 <p>For further information, see:
-<a href=\"""" + WHEREAMI + """\">""" + WHEREAMI + """</a>
+<a href="{0}">{0}</a>
 </p>
-</body></html>"""
+</body></html>""".format(WHEREAMI)
 
 
 class MLStripper(HTMLParser):
@@ -731,11 +732,20 @@ class ArtifactReader( object ):
                     self._add_local_file( fullname )
                 return
 
+            # Compile extensions
             artifact_ext = set( map(lambda s : s.lower() if s.startswith('.') 
                                     else '.'+s.lower(), 
                                     self.extensions) )
-            full_files = set( self.files )
 
+            # Add all full paths (taking care of expanding globs)
+            full_files = set()
+            for f in self.files:
+                if any( c in f for c in '*?[]' ):
+                    full_files.update( glob.glob(f) )
+                else:
+                    full_files.add( f )
+
+            # Traverse the tree and add all matching files
             for root, dirs, files in os.walk( '.' ):
 
                 # Remove the directory with the Git metadata
@@ -744,7 +754,7 @@ class ArtifactReader( object ):
                 except ValueError:
                     pass
 
-                # Push all the files that match conditions
+                # Push all the files that match the conditions
                 for name in files:
                     (base,ext) = os.path.splitext( name )
                     fullname = fix_path( os.path.join(root,name) )
@@ -1078,7 +1088,9 @@ if __name__ == "__main__":
     #print args
 
     # Split extensions
-    if args.extensions is not None:
+    if args.extensions == '':
+        args.extensions = []
+    elif args.extensions is not None:
         args.extensions = args.extensions.split(',')
 
     # Instantiate the manager class
