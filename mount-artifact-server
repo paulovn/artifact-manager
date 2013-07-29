@@ -1,0 +1,22 @@
+#!/bin/sh
+
+# This script will mount the artifact repository as a local disk
+# Needs to be called with a valid username on the server. Will prompt for
+# a password.
+# It has to be executed as root
+
+if [ $# != 1 ]
+then
+    echo "  Mount the artifact server as a local folder"
+    echo "  Usage: `basename $0` <remote-username>"
+    exit 1
+fi
+
+USER=$1
+
+
+LOCALDIR=/mnt/artifacts
+test -d $LOCALDIR || mkdir -p $LOCALDIR
+
+echo "Mounting artifact server on $LOCALDIR"
+mount -t cifs -o user=HI/$USER,uid=$USER '\\oriente.hi.inet\artifacts' $LOCALDIR

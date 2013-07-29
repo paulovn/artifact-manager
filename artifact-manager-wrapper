@@ -1,0 +1,52 @@
+#!/bin/sh
+
+# A very simple script that wraps around artifact-manager, trying to
+# find the most recent 2.x Python executable to run it
+
+# ----------------------------------------------------------------------
+
+solve_link()
+{
+    Prog="$1"
+    while test -n "`ls -ld $Prog | grep '^[Ll]'`"
+    do
+        Prog="`ls -l $Prog | sed 's/^.*[ ]//'`"
+        case $Prog in
+            /*) ;;
+            *) Prog="`dirname $0`/$Prog";;
+        esac
+    done
+    echo $Prog
+}
+
+
+# ----------------------------------------------------------------------
+
+here()
+{ 
+    PRG=`solve_link $0 | sed 's|^\./||'`
+    case $PRG in
+        /*)     BIN=`dirname $PRG` ;;
+        */*)    BIN=`pwd`/`dirname $PRG`;;
+        *)      BIN=`pwd`;;
+    esac
+    echo $BIN | sed -e 's|/[^/]\{1,\}/\.\.||g' 
+}
+
+# ----------------------------------------------------------------------
+
+HERE=`here $0`
+
+# Find the newest available 2.x Python to execute
+for PYTHON in python2.7 python27 python2.6 python26 python2 python
+do
+    for DIR in /usr/bin /usr/local/bin /opt/bin
+    do
+	test -x $DIR/$PYTHON && \
+	    exec "/usr/bin/$PYTHON" "$HERE/artifact-manager" "$@"
+	done
+done
+
+# Not found. Let's execute the script anyway and hope for the best ...
+exec "$HERE/artifact-manager" "$@"
+
