@@ -159,7 +159,7 @@ Options modifying the detection of artifact files are:
 * `--min-size`: the minimum size of an artifact file to be included in
   the list (0 for files of any size)
 * `--files`: files to be explicitly included as artifacts, if they exist,
-  regardless of size. This is a multi-argument options: include as many files
+  regardless of size. This is a multi-argument option: include as many files
   as needed, separated by spaces. Note that the option must *not* be immediately
   followed by any positional arguments (such as the operation, or the local 
   folder), or they will be taken as file names.
@@ -187,7 +187,7 @@ Other command-line options are:
 * `--delete-local`: when downloading, delete detected local artifacts
   that do not appear in the object list for the current branch. Otherwise they
   are left alone.
-* `--other-branch': when comparing artifacts, compare the current branch against
+* `--other-branch`: when comparing artifacts, compare the current branch against
    another branch in the remote repo, instead of against the local files
 
 
@@ -204,4 +204,4 @@ It needs either
 and, optionally,
 
 * The [pysmb](https://pypi.python.org/pypi/pysmb/1.1.5) Python module,
-  only to use SMB transports for artifact upload
+  only to use SMB transport for artifact upload
