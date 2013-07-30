@@ -203,8 +203,9 @@ def git_find_info( what, repo_dir ):
         output = r.rstrip()
 
     except Exception as e:
+        if e.errno == errno.ENOENT:
+            raise InvalidArgumentError("can't find directory: '%s'" % repo_dir)
 
-        print e
         if what == 'ignored':
             raise InvalidArgumentError("can't use --git-ignored option: git execution failed: " + str(e) )
         elif what == 'remote':
@@ -844,6 +845,24 @@ class ArtifactReader( object ):
             print '%4s  %s' % (status.get(k), v[3] )
 
 
+    def _get_file( self, fileid, outname ):
+        """
+        Download an artifact into a local file
+        """
+        # Create the directory to put the file, if needed
+        (head,tail) = os.path.split( outname )
+        if head:
+            mkpath_recursive( head )
+        # Download the file
+        source_path = posixjoin( *object_remote_location(fileid) )
+        with open(outname,'wb') as f:
+            self.reader.get( source_path, f )
+        # Set permissions & modification time
+        filedata = self.remote_index[fileid]
+        os.chmod( outname, int(filedata[2]) )
+        os.utime( outname, (-1, float(filedata[0])) )
+
+
     def download_artifacts( self, branch_string, local_basedir, remove_old ):
         """
         Download to the local folder all artifacts in remote repo that
@@ -863,11 +882,11 @@ class ArtifactReader( object ):
             print "Branch '%s' does not exist in artifact repo" % branch_string
             return False
         # Download each new/changed file
-        for name in files:
-            filedata = self.remote_index[name]
+        for fileid in files:
+            filedata = self.remote_index[fileid]
             outname = os.path.join(local_basedir,filedata[3])
             ok = os.path.exists(outname) and sha1_file(os.path.getsize(outname),
-                                                       outname) == name
+                                                       outname) == fileid
             if self.verbose:
                 status ="ok" if ok else "SRV" 
                 print '%4s: %s' % (status, filedata[3]),
@@ -875,16 +894,7 @@ class ArtifactReader( object ):
                 print ""
                 continue
             print "[DOWNLOADING]"
-            # Create the directory to put the file, if needed
-            (head,tail) = os.path.split( outname )
-            mkpath_recursive( head )
-            # Download the file
-            source_path = posixjoin( *object_remote_location(name) )
-            with open(outname,'wb') as f:
-                self.reader.get( source_path, f )
-            # Set permissions & modification time
-            os.chmod( outname, int(filedata[2]) )
-            os.utime( outname, (-1, float(filedata[0])) )
+            self._get_file( fileid, outname )
 
         # Remove old files, if asked to
         if remove_old:
@@ -901,6 +911,28 @@ class ArtifactReader( object ):
                 os.unlink( outname )
 
         return True
+
+
+    def get( self, filename, branch, outname ):
+        """
+        """
+        if self.verbose:
+            print "\n# Info: download remote artifact '%s' @ '%s'" % (filename,branch)
+            if self.dry_run:
+                print "** DRY RUN"
+        files = self.remote_get_list( branch, return_none=True )
+        if files is None:
+            print "Error: no files in branch '%s'" % branch
+            return False            
+        for f in files:
+            if self.remote_index[f][3] == filename:
+                if not self.dry_run:
+                    print "[DOWNLOADING]"
+                    self._get_file( f, outname )
+                return True
+        print "Error: can't find the file in branch '%s'" % branch
+        return False
+                
 
     def get_cfg( self ):
         """
@@ -1073,8 +1105,10 @@ if __name__ == "__main__":
     parser.add_argument('--git-ignored', action='store_true', help='include all files ignored by git in the local repo' )
     parser.add_argument('--overwrite', action='store_true', help='when uploading, overwrite the remote artifact definition for the current branch (default: %(default)s)' )
     parser.add_argument('--delete-local', action='store_true', help='when downloading, remove from local directory the artifacts not present in the remote side (default: %(default)s)' )
-    parser.add_argument('operation', choices=['list','diff','download','upload','branches','setoptions','getoptions'], help='operation to execute: List artifacts in remote repo, compare artifact lists, download artifacts from repo, upload local artifacts, list remote branches,set repo options' )
-    parser.add_argument('dir', nargs='?', default=os.getcwd(), help='local folder to use (default: %(default)s)')
+    parser.add_argument('operation', choices=['list','diff','download','get','upload','branches','setoptions','getoptions'], help='operation to execute: List artifacts in remote repo, compare artifact lists, download artifacts from repo, upload local artifacts, list remote branches,set repo options' )
+    parser.add_argument('--name', '-i', help='file to get' )
+    parser.add_argument('--outname', '-o', help='output file name for "get" operation, when not the same name as the original file' )
+    parser.add_argument('dir', nargs='?', default=os.getcwd(), help='local folder to use as tree root (default: %(default)s)')
     args = parser.parse_args()
     #print args
 
@@ -1101,14 +1135,10 @@ if __name__ == "__main__":
     if args.operation == 'list':
 
         r = mgr.remote_print_list( args.branch )
-        if not r:
-            sys.exit( 1 )
 
     elif args.operation == 'branches':
 
         r = mgr.remote_print_branches( args.branch )
-        if not r:
-            sys.exit( 1 )
 
     elif args.operation == 'diff' or args.operation == 'check':
 
@@ -1116,35 +1146,33 @@ if __name__ == "__main__":
             r = mgr.diff( args.branch, args.other_branch )
         else:
             r = mgr.local_print_changes( args.dir, args.branch )
-        if not r:
-            sys.exit( 1 )
 
     elif args.operation == 'download':
 
         r = mgr.download_artifacts( args.branch, args.dir, args.delete_local )
-        if not r:
-            sys.exit( 1 )
+
+    elif args.operation == 'get':
+
+        if args.outname is None:
+            args.outname = os.path.join( args.dir, args.name )
+        r = mgr.get( args.name, args.branch, args.outname )
 
     elif args.operation == 'upload':
 
         r = mgr.upload_artifacts( args.dir, args.branch, args.overwrite ) 
-        if not r:
-            sys.exit( 1 )
 
     elif args.operation == 'setoptions':
 
         r = mgr.put_cfg()
-        if not r:
-            sys.exit( 1 )
 
     elif args.operation == 'getoptions':
 
         r = mgr.get_cfg()
-        if not r:
-            sys.exit( 1 )
 
     else:
 
         print args.operation, "not implemented yet"
         sys.exit(1)
 
+
+sys.exit( not r )

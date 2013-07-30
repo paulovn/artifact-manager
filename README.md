@@ -35,9 +35,11 @@ It accepts the following operations:
 
  * __branches__ List available branches in the repo in the remote server
 
- * __download__  Fetch artifacts for the current branch from the repo.
+ * __download__  Fetch the artifacts for the current branch from the repo.
      Only new & modified artifacts will be downloaded. They will be
      left in their defined places in the project tree.
+
+ * __get__ Download one specific artifact file from one specific branch
 
  * __upload__  Upload all local artifacts to the repo, defining the set for
      the current branch. Only new/modified files will be uploaded
@@ -192,6 +194,9 @@ Other command-line options are:
   are left alone.
 * `--other-branch`: when comparing artifacts, compare the current branch against
    another branch in the remote repo, instead of against the local files
+* `--name`: name of the artifact to download, for singe-file __get__ operations
+* `--outname`: for __get__ operations, name to give to the downloaded file (if 
+  not specified, the same name & path as recorded in the branch will be used)
 
 
 Requirements
