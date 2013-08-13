@@ -197,7 +197,10 @@ Other command-line options are:
 * `--name`: name of the artifact to download, for singe-file __get__ operations
 * `--outname`: for __get__ operations, name to give to the downloaded file (if 
   not specified, the same name & path as recorded in the branch will be used)
-
+* `--subdir <dir>`: for __diff__ and __download__ operations, work only with 
+  artifacts belonging to a subdirectory of the project (for this to work well, 
+  the defined local project dir must be that subdirectory, otherwise artifacts
+  will not be downloaded to its correct place)
 
 Requirements
 ------------
