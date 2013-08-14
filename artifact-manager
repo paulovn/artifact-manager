@@ -1062,6 +1062,25 @@ class ArtifactManager( ArtifactReader ):
         self.writer.update( StringIO.StringIO(buffer.getvalue()), INDEX )
 
 
+    def rename_branch( self, branch, new_branch_name ):
+        """Rename a branch in the remote server"""
+        if branch not in self.remote_branches:
+            print "Branch '%s' does not exist in artifact repo" % branch
+            return False
+        # Rename the branch filelist
+        oldname = os.path.join( REFS, branch )
+        newname = os.path.join( REFS, new_branch_name )
+        (head,tail) = os.path.split( newname )
+        if head:
+            self.writer.folder_ensure( head )
+        self.writer.rename( oldname, newname )
+        # Update the list of branches
+        self.remote_branches.remove( branch )
+        self.remote_branches.add( new_branch_name )
+        self.put_branches()
+        return True
+
+
     def put_branches( self ):
         buffer = StringIO.StringIO()
         buffer.write( "\n".join(sorted(self.remote_branches)) )
@@ -1131,14 +1150,14 @@ if __name__ == "__main__":
     parser.add_argument('--server-url', '-u', default=','.join(REPO_URL), help='Base URL for the artifact repository (default: %(default)s)' )
     parser.add_argument('--repo-name', '-r', help='name of repository to use' )
     parser.add_argument('--branch', '-b', help='set the current branch' )
-    parser.add_argument('--other-branch', '-ob', help='the other branch to compare to' )
+    parser.add_argument('--other-branch', '-ob', help='the other branch to compare to or to rename to' )
     parser.add_argument('--extensions', '-e', help='extensions to consider as artifacts (default: '+','.join(DEFAULT_OPTIONS['extensions'])+')', default=None )
     parser.add_argument('--files', '-f', help='files to add explicitly (full path)', default=None, nargs='+' )
     parser.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
     parser.add_argument('--git-ignored', action='store_true', help='include all files ignored by git in the local repo' )
     parser.add_argument('--overwrite', action='store_true', help='when uploading, overwrite the remote artifact definition for the current branch (default: %(default)s)' )
     parser.add_argument('--delete-local', action='store_true', help='when downloading, remove from local directory the artifacts not present in the remote side (default: %(default)s)' )
-    parser.add_argument('operation', choices=['list','diff','download','get','upload','branches','setoptions','getoptions'], help='operation to execute: List artifacts in remote repo, compare artifact lists, download artifacts from repo, fetch a single artifact file, upload local artifacts, list remote branches, set repo options, get repo options' )
+    parser.add_argument('operation', choices=['list','diff','download','get','upload','branches','setoptions','getoptions','rename-branch'], help='operation to execute: List artifacts in remote repo, compare artifact lists, download artifacts from repo, fetch a single artifact file, upload local artifacts, list remote branches, set repo options, get repo options, rename a branch' )
 
     parser.add_argument('--name', '-i', help='file to fetch, for the "get" operation' )
     parser.add_argument('--outname', '-o', help='output file name for the "get" operation, when not the same name as the original file' )
@@ -1167,7 +1186,7 @@ if __name__ == "__main__":
         args.extensions = args.extensions.split(',')
 
     # Instantiate the manager class
-    mgr_class = ArtifactManager if args.operation in ('upload','setoptions') else ArtifactReader
+    mgr_class = ArtifactManager if args.operation in ('upload','setoptions','rename-branch') else ArtifactReader
     mgr = mgr_class( args )
 
     # Do the operation
@@ -1207,6 +1226,10 @@ if __name__ == "__main__":
     elif args.operation == 'getoptions':
 
         r = mgr.get_cfg()
+
+    elif args.operation == 'rename-branch':
+
+        r = mgr.rename_branch( args.branch, args.other_branch )
 
     else:
 

@@ -51,6 +51,8 @@ It accepts the following operations:
      the server, modified by any command-line arguments) and store them
      as repository options
 
+ * __rename-branch__ Change the name of a branch in the repo
+
  * __remove-branch__ *future op*
 
  * __purge__	  *future op*
