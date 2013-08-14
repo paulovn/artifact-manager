@@ -1067,6 +1067,10 @@ class ArtifactManager( ArtifactReader ):
         if branch not in self.remote_branches:
             print "Branch '%s' does not exist in artifact repo" % branch
             return False
+        if self.verbose:
+            print "\n# Info: Renaming branch '%s' to '%s'" % (branch,new_branch_name)
+        if self.dry_run:
+            return 
         # Rename the branch filelist
         oldname = os.path.join( REFS, branch )
         newname = os.path.join( REFS, new_branch_name )
