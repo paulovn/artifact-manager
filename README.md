@@ -190,19 +190,21 @@ Other command-line options are:
 * `--verbose <n>`: level of verbosity (default is 1)
 * `--dry-run` do not actually modify either local or remote files
 * `--overwrite`: when uploading, if the branch already exists overwrite its
-  definition. Without this option the upload operation will fails.
+  definition. Without this option an upload operation on an existing branch 
+  will fail.
 * `--delete-local`: when downloading, delete detected local artifacts
   that do not appear in the object list for the current branch. Otherwise they
   are left alone.
 * `--other-branch`: when comparing artifacts, compare the current branch against
    another branch in the remote repo, instead of against the local files
-* `--name`: name of the artifact to download, for singe-file __get__ operations
+* `--name`: name of the artifact to download, for single-file __get__ operations
 * `--outname`: for __get__ operations, name to give to the downloaded file (if 
   not specified, the same name & path as recorded in the branch will be used)
 * `--subdir <dir>`: for __diff__ and __download__ operations, work only with 
-  artifacts belonging to a subdirectory of the project (for this to work well, 
-  the defined local project dir must be that subdirectory, otherwise artifacts
-  will not be downloaded to its correct place)
+  artifacts under that subdirectory of the project. For this to work well on
+  downloads, the local project dir in use must be precisely that subdirectory 
+  (i.e. move to it or add as parameter), otherwise artifacts will not be 
+  downloaded to its correct place.
 
 Requirements
 ------------
