@@ -35,9 +35,11 @@ It accepts the following operations:
 
  * __branches__ List available branches in the repo in the remote server
 
- * __download__  Fetch artifacts for the current branch from the repo.
+ * __download__  Fetch the artifacts for the current branch from the repo.
      Only new & modified artifacts will be downloaded. They will be
      left in their defined places in the project tree.
+
+ * __get__ Download one specific artifact file from one specific branch
 
  * __upload__  Upload all local artifacts to the repo, defining the set for
      the current branch. Only new/modified files will be uploaded
@@ -48,6 +50,8 @@ It accepts the following operations:
  * __setoptions__ Take the currently defined options (the ones fetched from
      the server, modified by any command-line arguments) and store them
      as repository options
+
+ * __rename-branch__ Change the name of a branch in the repo
 
  * __remove-branch__ *future op*
 
@@ -155,14 +159,17 @@ Execution options
 Options modifying the detection of artifact files are:
 
 * `--extensions` : a comma-separated list of the file extensions (with or
-  without a leading period) that will be collected as artifacts
+  without a leading period) that will be collected as artifacts. Note that if 
+  the file name contains several dots, only the rightmost dot-extension will 
+  be considered.
 * `--min-size`: the minimum size of an artifact file to be included in
   the list (0 for files of any size)
 * `--files`: files to be explicitly included as artifacts, if they exist,
   regardless of size. This is a multi-argument option: include as many files
   as needed, separated by spaces. Note that the option must *not* be immediately
   followed by any positional arguments (such as the operation, or the local 
-  folder), or they will be taken as file names.
+  folder), or they will be taken as file names. It accepts shell-like globbing,
+  with the `*`, `?` and `[charset]` metacharacters.
 * `--git-ignored`: select as artifacts all files that will be ignored
   by git, as defined in the checked out repo. This option needs a
   working command-line git.
@@ -183,13 +190,21 @@ Other command-line options are:
 * `--verbose <n>`: level of verbosity (default is 1)
 * `--dry-run` do not actually modify either local or remote files
 * `--overwrite`: when uploading, if the branch already exists overwrite its
-  definition. Without this option the upload operation will fails.
+  definition. Without this option an upload operation on an existing branch 
+  will fail.
 * `--delete-local`: when downloading, delete detected local artifacts
   that do not appear in the object list for the current branch. Otherwise they
   are left alone.
 * `--other-branch`: when comparing artifacts, compare the current branch against
    another branch in the remote repo, instead of against the local files
-
+* `--name`: name of the artifact to download, for single-file __get__ operations
+* `--outname`: for __get__ operations, name to give to the downloaded file (if 
+  not specified, the same name & path as recorded in the branch will be used)
+* `--subdir <dir>`: for __diff__ and __download__ operations, work only with 
+  artifacts under that subdirectory of the project. For this to work well on
+  downloads, the local project dir in use must be precisely that subdirectory 
+  (i.e. move to it or add as parameter), otherwise artifacts will not be 
+  downloaded to its correct place.
 
 Requirements
 ------------
