@@ -203,20 +203,25 @@ def git_find_info( what, repo_dir ):
         output = r.rstrip()
 
     except Exception as e:
-        if e.errno == errno.ENOENT:
+        if hasattr(e,'errno') and e.errno == errno.ENOENT:
             raise InvalidArgumentError("can't find directory: '%s'" % repo_dir)
-
-        if what == 'ignored':
+        elif what == 'ignored':
             raise InvalidArgumentError("can't use --git-ignored option: git execution failed: " + str(e) )
-        elif what == 'remote':
-            c = SafeConfigParser()
-            with StrippedFile(os.path.join(repo_dir,'.git','config')) as f:
-                c.readfp(f)
-            output = c.get('remote "origin"','url')
-        else:
-            with open(os.path.join(repo_dir,'.git','HEAD')) as f:
-                data = f.readline().rstrip()
-            return data.split('refs/heads/')[-1]
+
+        try:
+            if what == 'remote':
+                c = SafeConfigParser()
+                with StrippedFile(os.path.join(repo_dir,'.git','config')) as f:
+                    c.readfp(f)
+                    output = c.get('remote "origin"','url')
+            else:       # current branch
+                with open(os.path.join(repo_dir,'.git','HEAD')) as f:
+                    data = f.readline().rstrip()
+                return data.split('refs/heads/')[-1]
+        except Exception as e:
+            if hasattr(e,'errno') and e.errno == errno.ENOENT:
+                raise InvalidArgumentError("can't find git metadata in '%s'" % repo_dir)
+                
 
     # Terminate output parsing
     if what == 'remote':
