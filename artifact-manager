@@ -9,6 +9,9 @@ Accepts as transport layers:
   - HTTP for reading/downloading artifacts
   - a locally visible folder for uploading
   - An SMB R/W transport is in the works
+
+TODO: we need to add somehow the path name to the keys, otherwise the same
+file moved to another place won't be detected
 """
 
 import os
@@ -557,6 +560,7 @@ def size_string(size):
     return "%.*f%s"%(precision,size,suffixes[suffixIndex])
 
 def item_string(entry,subdir):
+    """Return the item string to add to the index"""
     start = 0 if subdir is None else len(subdir)
     return '  %s %6s %s' % (datetime.fromtimestamp(entry[0]).strftime('%Y-%m-%d %H:%M %z'), size_string(entry[1]), entry[3][start:] )
 
@@ -808,6 +812,7 @@ class ArtifactReader( object ):
 
     def _print_diff( self, lists, index ):
         """
+        Print out lists of items
         """
         for k,v in lists.iteritems():
             if not v:
@@ -822,7 +827,24 @@ class ArtifactReader( object ):
                 print item_string( index[i], self.subdir )
 
 
-    def diff( self, branch1, branch2 ):
+    def _print_diff_old( self, results, names=('ok','LOC','SRV') ):
+        """
+        Old listing format
+        """
+        (ok, new, old) = results
+        status = dict( (k,names[0]) for k in ok )
+        status.update( dict( (k,names[1]) for k in new ) )
+        status.update( dict( (k,names[2]) for k in old ) )
+        all_artifacts = self.local_artifacts.copy()
+        all_artifacts.update( dict( (key,self.remote_index[key]) 
+                                    for key in old ) )
+        #import pprint; pprint.pprint(all_artifacts )
+        #import pprint; pprint.pprint(status )
+        for k,v in sorted( all_artifacts.iteritems(), key=lambda e : e[1][3] ):
+            print '%4s  %s' % (status.get(k), v[3] )
+
+
+    def diff( self, branch1, branch2, show_all ):
         """
         Compare two branches
           @param branch1 (str): the name of the 1st branch
@@ -838,44 +860,38 @@ class ArtifactReader( object ):
             print "\n# Info: compare branches '%s' & '%s'%s" % (branch1,branch2,subd)
         lists = dict( zip( ('in both','only in '+branch1,'only in '+branch2),
                            results ) )
+        if not show_all:
+            del lists['in both']
         self._print_diff( lists, self.remote_index )
         return True
 
 
-    def local_print_changes( self, local_basedir, branch_string ):
+    def local_print_changes( self, local_basedir, branch_string, show_all ):
         """
         Print out a summary of the comparison between the local artifacts 
         and the contents in the remote repo
         """
-        if True:
-            results = self.local_check_list( local_basedir, branch_string )
-            lists = dict( zip( ('in both','only in local','only in server'),
-                               results ) )
-            if self.verbose:
-                print "\n# Info: check local artifacts against '%s'" % branch_string
-                if self.subdir:
-                    print "# for subdir '%s'" % self.subdir
+        results = self.local_check_list( local_basedir, branch_string )
 
-            all_artifacts = self.local_artifacts.copy()
-            all_artifacts.update( dict( (key,self.remote_index[key]) 
-                                        for key in results[2] ) )
-            self._print_diff( lists, all_artifacts )
-            return True
-
-        # Old listing format
-        (ok, new, old) = self.local_check_list( local_basedir, branch_string )
-        status = dict( (k,'ok') for k in ok )
-        status.update( dict( (k,'LOC') for k in new ) )
-        status.update( dict( (k,'SRV') for k in old ) )
-        all_artifacts = self.local_artifacts.copy()
-        all_artifacts.update( dict( (key,self.remote_index[key]) 
-                                    for key in old ) )
-        #import pprint; pprint.pprint(all_artifacts )
-        #import pprint; pprint.pprint(status )
         if self.verbose:
             print "\n# Info: check local artifacts against '%s'" % branch_string
-        for k,v in sorted( all_artifacts.iteritems(), key=lambda e : e[1][3] ):
-            print '%4s  %s' % (status.get(k), v[3] )
+            if self.subdir:
+                print "# for subdir '%s'" % self.subdir
+
+        # Old listing format
+        #self._print_diff_old( results )
+        #return
+
+        lists = dict( zip( ('in both','only in local','only in server'),
+                           results ) )
+        if not show_all:
+            del lists['in both']
+
+        all_artifacts = self.local_artifacts.copy()
+        all_artifacts.update( dict( (key,self.remote_index[key]) 
+                                    for key in results[2] ) )
+        self._print_diff( lists, all_artifacts )
+        return True
 
 
     def _get_file( self, fileid, outname ):
@@ -1152,27 +1168,52 @@ class ArtifactManager( ArtifactReader ):
 if __name__ == "__main__":
 
     # Define & read command-line options
-    parser = argparse.ArgumentParser( description="Manage artifact check/download/upload against a remote repository. See " + WHEREAMI)
+    parser = argparse.ArgumentParser( description="Manage binary artifacts against a versioned remote repository. See " + WHEREAMI)
 
     parser.add_argument('--verbose', '-v', type=int, default=1, help='Verbose mode')
     parser.add_argument('--dry-run', action='store_true', help="don't modify files, locally or remotely" )
-    parser.add_argument('--server-url', '-u', default=','.join(REPO_URL), help='Base URL for the artifact repository (default: %(default)s)' )
-    parser.add_argument('--repo-name', '-r', help='name of repository to use' )
-    parser.add_argument('--branch', '-b', help='set the current branch' )
-    parser.add_argument('--other-branch', '-ob', help='the other branch to compare to or to rename to' )
-    parser.add_argument('--extensions', '-e', help='extensions to consider as artifacts (default: '+','.join(DEFAULT_OPTIONS['extensions'])+')', default=None )
-    parser.add_argument('--files', '-f', help='files to add explicitly (full path)', default=None, nargs='+' )
-    parser.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
-    parser.add_argument('--git-ignored', action='store_true', help='include all files ignored by git in the local repo' )
-    parser.add_argument('--overwrite', action='store_true', help='when uploading, overwrite the remote artifact definition for the current branch (default: %(default)s)' )
-    parser.add_argument('--delete-local', action='store_true', help='when downloading, remove from local directory the artifacts not present in the remote side (default: %(default)s)' )
-    parser.add_argument('operation', choices=['list','diff','download','get','upload','branches','setoptions','getoptions','rename-branch'], help='operation to execute: List artifacts in remote repo, compare artifact lists, download artifacts from repo, fetch a single artifact file, upload local artifacts, list remote branches, set repo options, get repo options, rename a branch' )
-
-    parser.add_argument('--name', '-i', help='file to fetch, for the "get" operation' )
-    parser.add_argument('--outname', '-o', help='output file name for the "get" operation, when not the same name as the original file' )
+    parser.add_argument('--server-url', '-u', default=','.join(REPO_URL),
+    help='Base URL for the repository server (default: %(default)s)' )
+    parser.add_argument('--repo-name', '-r', help='set the name of repository to use from the server' )
+    parser.add_argument('--branch', '-b', help='set the name of the branch to operate with' )
     parser.add_argument('--subdir', '-s', help='operate only on a subdir of the project' )
+    parser.add_argument('--project-dir', '-d', default=os.getcwd(), help='local folder to use as tree root (default: %(default)s)')
 
-    parser.add_argument('dir', nargs='?', default=os.getcwd(), help='local folder to use as tree root (default: %(default)s)')
+    parser.add_argument('--extensions', '-e', help='extensions to consider as artifacts (default: '+','.join(DEFAULT_OPTIONS['extensions'])+')', default=None )
+    parser.add_argument('--files', '-f', help='files to add explicitly as artifacts (full path)', default=None, nargs='+' )
+    parser.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
+    parser.add_argument('--git-ignored', action='store_true', help='define as artifacts all files ignored by git in the local repo' )
+
+    subp = parser.add_subparsers(dest='command' )
+
+    s1 = subp.add_parser( 'list', help='list the artifacts in remote repo' )
+
+    s2 = subp.add_parser( 'diff', help='compare two artifact lists' )
+    s2.add_argument('other_branch', metavar='other-branch', nargs='?',
+                    help='name of the other branch to compare to, when not the local project dir' )
+    s2.add_argument('--show-all', '-a', action='store_true',
+                    help='show all files, not only the differences' )
+
+    s4 = subp.add_parser( 'download', help='download artifacts from server into the local project dir' )
+    s4.add_argument('--delete-local', action='store_true', help='when downloading, remove from local directory the artifacts not present in the remote side (default: %(default)s)' )
+    
+    s5 = subp.add_parser( 'get', help='fetch a single artifact file from remote server' )
+    s5.add_argument( 'name', help='file to fetch' ) 
+    s5.add_argument('--outname', '-o', help='output file name, when not the same name as the original file' )
+
+    s6 = subp.add_parser( 'upload', help='upload the set of local artifacts to the current branch in remote repo' )
+    s6.add_argument('--overwrite', action='store_true', help='when uploading, overwrite the remote artifact definition for the current branch (default: %(default)s)' )
+
+    s7 = subp.add_parser( 'branches', help='list all branches in remote repo' )
+
+    s9 = subp.add_parser( 'getoptions', help='get configuration options from remote repo' )
+    s8 = subp.add_parser( 'setoptions', help='set configuration options in remote repo' )
+
+    s10 = subp.add_parser( 'rename-branch', help='rename a branch in remote repo' )
+    s10.add_argument('new_name', metavar='new-name', 
+                     help='new name of the branch' )
+
+
     args = parser.parse_args()
     #print args
 
@@ -1180,9 +1221,9 @@ if __name__ == "__main__":
     # name of the git repo checked out in the local folder, and the
     # current checked out branch
     if not args.repo_name:
-        args.repo_name = git_find_info( 'remote', args.dir )
+        args.repo_name = git_find_info( 'remote', args.project_dir )
     if not args.branch:
-        args.branch = git_find_info( 'branch', args.dir )
+        args.branch = git_find_info( 'branch', args.project_dir )
     #print args
 
     if args.subdir and not args.subdir.endswith('/'):
@@ -1195,55 +1236,57 @@ if __name__ == "__main__":
         args.extensions = args.extensions.split(',')
 
     # Instantiate the manager class
-    mgr_class = ArtifactManager if args.operation in ('upload','setoptions','rename-branch') else ArtifactReader
+    mgr_class = ArtifactManager if args.command in ('upload','setoptions','rename-branch') else ArtifactReader
     mgr = mgr_class( args )
 
     # Do the operation
-    if args.operation == 'list':
+    if args.command == 'list':
 
         r = mgr.remote_print_list( args.branch )
 
-    elif args.operation == 'branches':
+    elif args.command == 'branches':
 
         r = mgr.remote_print_branches( args.branch )
 
-    elif args.operation == 'diff' or args.operation == 'check':
+    elif args.command in ('diff','check'):
 
         if args.other_branch:
-            r = mgr.diff( args.branch, args.other_branch )
+            r = mgr.diff( args.branch, args.other_branch, args.show_all )
         else:
-            r = mgr.local_print_changes( args.dir, args.branch )
+            r = mgr.local_print_changes( args.project_dir, args.branch, 
+                                         args.show_all )
 
-    elif args.operation == 'download':
+    elif args.command == 'download':
 
-        r = mgr.download_artifacts( args.branch, args.dir, args.delete_local )
+        r = mgr.download_artifacts( args.branch, args.project_dir, 
+                                    args.delete_local )
 
-    elif args.operation == 'get':
+    elif args.command == 'get':
 
         if args.outname is None:
-            args.outname = os.path.join( args.dir, args.name )
+            args.outname = os.path.join( args.project_dir, args.name )
         r = mgr.get( args.name, args.branch, args.outname )
 
-    elif args.operation == 'upload':
+    elif args.command == 'upload':
 
-        r = mgr.upload_artifacts( args.dir, args.branch, args.overwrite ) 
+        r = mgr.upload_artifacts( args.project_dir, args.branch, args.overwrite ) 
 
-    elif args.operation == 'setoptions':
+    elif args.command == 'setoptions':
 
         r = mgr.put_cfg()
 
-    elif args.operation == 'getoptions':
+    elif args.command == 'getoptions':
 
         r = mgr.get_cfg()
 
-    elif args.operation == 'rename-branch':
+    elif args.command == 'rename-branch':
 
-        r = mgr.rename_branch( args.branch, args.other_branch )
+        r = mgr.rename_branch( args.branch, args.new_name )
 
     else:
 
-        print args.operation, "not implemented yet"
+        print args.command, "not implemented yet"
         sys.exit(1)
 
 
-sys.exit( not r )
+    sys.exit( not r )
