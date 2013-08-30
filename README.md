@@ -27,9 +27,9 @@ their name, path in the project tree and modification time.
 
 The general shape of the command-line is:
 
-    artifact.manager [general options] <operation> [operation options]
+    artifact-manager <command> [command options]
 
-It accepts the following operations:
+It accepts the following command:
 
  * __list__  List the artifacts stored in a remote repo for a given branch
 
@@ -88,7 +88,7 @@ steps are as follows:
   the new or changed files, which comes handy if those files are large).
 
 * For artifact upload, the command to be executed when positioned in the 
-  local folder is `artifact-manager --server-url <dir> upload` [1]. It will 
+  local folder is `artifact-manager upload --server-url <dir>` [1]. It will 
   collect all local artifacts, upload the ones not yet in the server,
   and label the set in the server as the current local checked-out branch [2]
 
@@ -97,7 +97,7 @@ steps are as follows:
   belonging to the new branch
 
 * Whenever there is variation in the local artifacts, issuing the command  
-  `artifact-manager --server-url <dir> upload --overwrite` will keep 
+  `artifact-manager upload --server-url <dir> --overwrite` will keep 
   the remote repository in sync with the local files. Note however that 
   the previous configuration for that branch will be lost: the server 
   keeps *only one version* of an artifact snapshot per branch [3].
@@ -177,10 +177,8 @@ Options modifying the detection of artifact files are:
   the list (0 for files of any size)
 * `--files`: files to be explicitly included as artifacts, if they exist,
   regardless of size. This is a multi-argument option: include as many files
-  as needed, separated by spaces. Note that the option must *not* be immediately
-  followed by the command to run, or it will be taken as another file name (put
-  another option in between). It accepts shell-like globbing, using the `*`, 
-  `?` and `[charset]` metacharacters.
+  as needed, separated by spaces. It accepts shell-like globbing, using the 
+  `*`, `?` and `[charset]` metacharacters.
 * `--git-ignored`: select as artifacts all files that will be ignored
   by git, as defined in the checked out repo. This option needs a
   working command-line git.
@@ -212,13 +210,14 @@ And the command-specific options are:
   are left untouched.
 * `--outname`: for __get__, name to give to the downloaded file (if 
   not specified, the same name & path as recorded in the branch will be used)
-* `--subdir <dir>`: for __diff__ and __download__ operations, work only with 
+* `--subdir <dir>`: for __diff__ and __download__ commands, work only with 
   artifacts under that subdirectory of the project. For this to work well on
   downloads, the local project dir in use must be precisely that subdirectory 
   (i.e. move to it or add as parameter), otherwise artifacts will not be 
   downloaded to its correct place.
 * `--show-all`: for __diff__, list all the artifacts in both branches, 
   including the ones shared by both.
+
 
 Requirements
 ------------

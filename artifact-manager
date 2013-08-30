@@ -1167,49 +1167,58 @@ class ArtifactManager( ArtifactReader ):
 
 if __name__ == "__main__":
 
+
+    general = argparse.ArgumentParser( add_help=False )
+    general.add_argument('--verbose', '-v', type=int, default=1, help='Verbose mode')
+    general.add_argument('--dry-run', action='store_true', help="don't modify files, locally or remotely" )
+    general.add_argument('--server-url', '-u', default=','.join(REPO_URL),
+    help='Base URL for the repository server (default: %(default)s)' )
+    general.add_argument('--repo-name', '-r', help='set the name of repository to use from the server' )
+    general.add_argument('--branch', '-b', help='set the name of the branch to operate with' )
+    general.add_argument('--subdir', '-s', help='operate only on a subdir of the project' )
+    general.add_argument('--project-dir', '-d', default=os.getcwd(), help='local folder to use as tree root (default: %(default)s)')
+
+    general.add_argument('--extensions', '-e', help='extensions to consider as artifacts (default: '+','.join(DEFAULT_OPTIONS['extensions'])+')', default=None )
+    general.add_argument('--files', '-f', help='files to add explicitly as artifacts (full path)', default=None, nargs='+' )
+    general.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
+    general.add_argument('--git-ignored', action='store_true', help='define as artifacts all files ignored by git in the local repo' )
+
+
     # Define & read command-line options
     parser = argparse.ArgumentParser( description="Manage binary artifacts against a versioned remote repository. See " + WHEREAMI)
+    subp = parser.add_subparsers( dest='command', title='command',
+                                  help='Use -h on the command for additional options')
 
-    parser.add_argument('--verbose', '-v', type=int, default=1, help='Verbose mode')
-    parser.add_argument('--dry-run', action='store_true', help="don't modify files, locally or remotely" )
-    parser.add_argument('--server-url', '-u', default=','.join(REPO_URL),
-    help='Base URL for the repository server (default: %(default)s)' )
-    parser.add_argument('--repo-name', '-r', help='set the name of repository to use from the server' )
-    parser.add_argument('--branch', '-b', help='set the name of the branch to operate with' )
-    parser.add_argument('--subdir', '-s', help='operate only on a subdir of the project' )
-    parser.add_argument('--project-dir', '-d', default=os.getcwd(), help='local folder to use as tree root (default: %(default)s)')
+    s1 = subp.add_parser( 'list', help='list the artifacts in remote repo', 
+                          parents=[general] )
 
-    parser.add_argument('--extensions', '-e', help='extensions to consider as artifacts (default: '+','.join(DEFAULT_OPTIONS['extensions'])+')', default=None )
-    parser.add_argument('--files', '-f', help='files to add explicitly as artifacts (full path)', default=None, nargs='+' )
-    parser.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
-    parser.add_argument('--git-ignored', action='store_true', help='define as artifacts all files ignored by git in the local repo' )
-
-    subp = parser.add_subparsers(dest='command' )
-
-    s1 = subp.add_parser( 'list', help='list the artifacts in remote repo' )
-
-    s2 = subp.add_parser( 'diff', help='compare two artifact lists' )
+    s2 = subp.add_parser( 'diff', help='compare two artifact lists',
+                          parents=[general]  )
     s2.add_argument('other_branch', metavar='other-branch', nargs='?',
                     help='name of the other branch to compare to, when not the local project dir' )
     s2.add_argument('--show-all', '-a', action='store_true',
                     help='show all files, not only the differences' )
 
-    s4 = subp.add_parser( 'download', help='download artifacts from server into the local project dir' )
+    s4 = subp.add_parser( 'download', help='download artifacts from server into the local project dir', parents=[general]  )
     s4.add_argument('--delete-local', action='store_true', help='when downloading, remove from local directory the artifacts not present in the remote side (default: %(default)s)' )
     
-    s5 = subp.add_parser( 'get', help='fetch a single artifact file from remote server' )
+    s5 = subp.add_parser( 'get', help='fetch a single artifact file from remote server', parents=[general]  )
     s5.add_argument( 'name', help='file to fetch' ) 
     s5.add_argument('--outname', '-o', help='output file name, when not the same name as the original file' )
 
-    s6 = subp.add_parser( 'upload', help='upload the set of local artifacts to the current branch in remote repo' )
+    s6 = subp.add_parser( 'upload', help='upload the set of local artifacts to the current branch in remote repo', parents=[general]  )
     s6.add_argument('--overwrite', action='store_true', help='when uploading, overwrite the remote artifact definition for the current branch (default: %(default)s)' )
 
-    s7 = subp.add_parser( 'branches', help='list all branches in remote repo' )
+    s7 = subp.add_parser( 'branches', help='list all branches in remote repo',
+                          parents=[general] )
 
-    s9 = subp.add_parser( 'getoptions', help='get configuration options from remote repo' )
-    s8 = subp.add_parser( 'setoptions', help='set configuration options in remote repo' )
+    s8 = subp.add_parser( 'getoptions', parents=[general],
+                          help='get configuration options from remote repo' )
+    s9 = subp.add_parser( 'setoptions', parents=[general],
+                          help='set configuration options in remote repo' )
 
-    s10 = subp.add_parser( 'rename-branch', help='rename a branch in remote repo' )
+    s10 = subp.add_parser( 'rename-branch', parents=[general],
+                           help='rename a branch in remote repo' )
     s10.add_argument('new_name', metavar='new-name', 
                      help='new name of the branch' )
 
