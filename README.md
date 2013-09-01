@@ -29,16 +29,16 @@ The general shape of the command-line is:
 
     artifact-manager <command> [command options]
 
-It accepts the following command:
+It accepts the following commands:
 
  * __list__  List the artifacts stored in a remote repo for a given branch
 
- * __diff__ Compare the artifacts in the local tree with the current branch 
+ * __diff__  Compare the artifacts in the local tree with the current branch 
      in the remote repo or, if given another branch name as an additional 
      parameter compare the two branches in the remote repo.
      The option `--show-all` will list also the files common to both branches.
 
- * __branches__ List available branches in the repo in the remote server
+ * __branches__  List available branches in the repo in the remote server
 
  * __download__  Fetch the artifacts for the current branch from the repo.
      Only new & modified artifacts will be downloaded. They will be
@@ -46,7 +46,7 @@ It accepts the following command:
      option `--delete-local` will remove all local artifacts *not* in the
      remote server.
 
- * __get__ <name>. Download one specific artifact file from one specific branch.
+ * __get__ <name>  Download one specific artifact file from one specific branch.
      It will be put in its natural position in the local project tree, or 
      elsewhere if the additional `--outname` parameter is used.
 
@@ -54,19 +54,22 @@ It accepts the following command:
      set for the current branch. Only new/modified files will be uploaded.
      If the branch alreay existed, use the `--overwrite` parameter
 
- * __getoptions__ Show the options currently defined (the ones fetched from
+ * __getoptions__  Show the options currently defined (the ones fetched from
      the server, modified by any command-line arguments)
 
- * __setoptions__ Take the currently defined options (the ones fetched from
+ * __setoptions__  Take the currently defined options (the ones fetched from
      the server, modified by any command-line arguments) and store them
      as repository options
 
- * __rename-branch__ Change the name of a branch in the remote repo
+ * __rename-branch__  Change the name of a branch in the remote repo
 
- * __remove-branch__ *future op*
+ * __remove-branch__  *future op*
 
- * __purge__	  *future op*
+ * __purge__  *future op*
 
+To ease typing the artifact-manager command-line, a Bash autocompletion function
+is provided. To use it execute `source autocomplete-artifact-manager.sh` or 
+add the file to `/etc/bash_completion.d`
 
 
 Intended PDIHub workflow
@@ -150,14 +153,14 @@ git repo, minus the `.git` suffix) and the artifact branch (the
 currently checked out branch). This selection can be overriden with
 command line parameters.
 
-In summmary, the parameters needed for operation that can be defined are
+In summmary, the parameters needed for operation that can be modified are
 
 * Local project tree: use the `--project-dir` option; else the current
   working directory will be used
 * Repository name: use the `--repo-name <name>` option; else it will
   be taken from Git info
 * Branch name: use the `--branch <name>` option; else it will be taken from 
-  Git info
+  Git info (as the current checked-out branch)
 
 To be able to fetch Git info, the `git` command-line executable will
 be tried first; if not available the ".git" directory will be searched.
@@ -194,6 +197,10 @@ definitions at that time are stored as repository configuration, and
 used henceforth. It can be overriden at runtime for a given execution, or 
 re-stored with the __setoptions__ operation.
 
+
+Other options
+-------------
+
 Other command-line general options are:
 
 * `--verbose <n>`: level of verbosity (default is 1)
@@ -213,9 +220,9 @@ And the command-specific options are:
 * `--subdir <dir>`: for __diff__ and __download__ commands, work only with 
   artifacts under that subdirectory of the project. For this to work well on
   downloads, the local project dir in use must be precisely that subdirectory 
-  (i.e. move to it or add as parameter), otherwise artifacts will not be 
+  (i.e. move to it or set `--project-dir`), otherwise artifacts will not be 
   downloaded to its correct place.
-* `--show-all`: for __diff__, list all the artifacts in both branches, 
+* `--show-all`: for __diff__, list all the artifacts in both branches, also
   including the ones shared by both.
 
 
