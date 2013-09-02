@@ -1,13 +1,16 @@
 #!/usr/bin/env python
 
 """
-A script to manage a remote repository for overlaying artifacts
-(binary files) on top of a local folder (typically a checked-out Git
-local repository, but not necessarily)
+A script to manage a remote repository for overlaying artifacts (binary files) 
+on top of a local folder (typically a checked-out Git local repository, but
+not necessarily). Enables keeping versioned sets of artifacts, with their
+position in the local tree, so that they can be downloaded, uploaded and
+compared across versions.
 
 Accepts as transport layers:
-  - HTTP for reading/downloading artifacts
-  - a locally visible folder for uploading
+  - HTTP for read-only operations (listing/downloading) artifacts
+  - a locally visible folder for R/W operations (above, plus uploading and
+    version management)
   - An SMB R/W transport is in the works
 
 """
@@ -47,9 +50,10 @@ except ImportError:
 # Default URLs for the artifacts repository (as R & R/W transports)
 REPO_URL = ('http://artifacts.hi.inet',
             r'\\oriente.hi.inet\artifacts')
+# SMB domain for authentication
 DOMAIN = 'HI'
 
-# Repository configuration 
+# Repository configuration: names of management files/dirs
 VERSION = 3
 OPTIONS = 'options'
 INDEX = 'index'
@@ -733,6 +737,8 @@ class ArtifactReader( object ):
         if self.verbose:
             print "\n# Info: list remote artifacts for '%s'" % branch_string
         for k,v in sorted( remote.iteritems(), key=lambda e : e[1] ):
+            if self.subdir and not v.startswith(self.subdir):
+                continue
             print item_string(self.remote_index[k],self.subdir,v)
         return True
 
@@ -797,7 +803,7 @@ class ArtifactReader( object ):
 
     def _compare_lists( self, collection1, collection2 ):
         """
-        Compare two dict of items. Use both the key (i.e. the SHA1 hash) and
+        Compare two dicts of items. Use both the key (i.e. the SHA1 hash) and
         the value (i.e. the path) in the comparison. This way we check both file
         contents and file location.
         """
@@ -872,14 +878,12 @@ class ArtifactReader( object ):
 
     def diff( self, branch1, branch2, show_all ):
         """
-        Compare two branches
+        Compare two branches, and print out the differences
           @param branch1 (str): the name of the 1st branch
           @param branch2 (str): the name of the 2nd branch
-          @return a tuple of 
-             (<same files>, <files only in local>, <files only in remote>)
         """
-        list1 = self.remote_get_branch(branch1,return_none=True)
-        list2 = self.remote_get_branch(branch2,return_none=True)
+        list1 = self.remote_get_branch( branch1, return_none=True )
+        list2 = self.remote_get_branch( branch2, return_none=True )
         results = self._compare_lists( list1, list2 )
         if self.verbose:
             subd = " for subdir '%s'" % self.subdir if self.subdir else ''
@@ -1126,11 +1130,11 @@ class ArtifactManager( ArtifactReader ):
         # Update the list of branches
         self.remote_branches.remove( branch )
         self.remote_branches.add( new_branch_name )
-        self.put_branch_list()
+        self.put_branches_list()
         return True
 
 
-    def put_branch_list( self ):
+    def put_branches_list( self ):
         """Write in the remote repo the list of existing branches"""
         buffer = StringIO.StringIO()
         buffer.write( "\n".join(sorted(self.remote_branches)) )
@@ -1181,7 +1185,7 @@ class ArtifactManager( ArtifactReader ):
             self.put_branch_filelist( branch_string )
             if branch_string not in self.remote_branches:
                 self.remote_branches.add( branch_string )
-                self.put_branch_list()
+                self.put_branches_list()
             if len(newf):
                 self.put_index()
         return True
