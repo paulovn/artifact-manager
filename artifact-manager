@@ -708,9 +708,18 @@ class ArtifactReader( object ):
             data = buffer.getvalue()
         # Construct the branch dict
         branch = {}
+        prev = None
         for l in data.splitlines():
             f = l.split(' ',2)
-            branch[f[0]] = f[1] if len(f)>1 else self.remote_index[ f[0] ][3]
+            key = f[0]
+            value = f[1] if len(f)>1 else self.remote_index[key][3]
+            if key == '-':
+                if prev is None:
+                    print "Error in remote repo: invalid branch spec for '%s'" % branch_string
+                    return None
+                branch[prev].append( value )
+            prev = key
+            branch[key] = [ value ]
         return branch
         
 
@@ -753,8 +762,8 @@ class ArtifactReader( object ):
 
     def _local_collect_list( self, local_basedir ):
         """
-        Get all artifacts in the local checked out repository, 
-        and populate the object's structure
+        Get all artifacts in the local checked out repository, and populate 
+        the object's structure
         """
         current = os.getcwd()
         os.chdir( local_basedir )
@@ -788,14 +797,22 @@ class ArtifactReader( object ):
 
                 # Push all the files that match the conditions
                 for name in files:
-                    (base,ext) = os.path.splitext( name )
                     fullname = fix_path( os.path.join(root,name) )
                     if os.path.islink( fullname ):
                         continue        # skip symbolic links to files
+
+
+                    # Build the set of extensions for this file
+                    e = name.lower().split(os.path.extsep)[1:]
+                    ext = set( [ '.' + os.path.extsep.join(e[i:]) 
+                                 for i in range(0,len(e)) ])
+
                     size = os.path.getsize(fullname)
-                    #print ext, size
+                    #print fullname, ext, size
+
                     if (fullname in full_files or 
-                        (ext.lower() in artifact_ext and size > self.min_size)):
+                        (not artifact_ext.isdisjoint(ext) and 
+                         size > self.min_size)):
                         self._add_local_file( fullname, size )
         finally:
             os.chdir( current )
@@ -812,6 +829,8 @@ class ArtifactReader( object ):
         both = c1 & c2
         only_c1 = c1 - c2
         only_c2 = c2 - c1
+        import pprint; pprint.pprint(c1); pprint.pprint(c2)
+
         return (both, only_c1, only_c2)
 
 
@@ -963,7 +982,7 @@ class ArtifactReader( object ):
         # Get the lists of files, compose status for each file
         results, artifacts = self.local_check_list(local_basedir,branch_string)
         status = {}
-        for r in zip(results,('ok','new','old')):
+        for r in zip(results,('ok','old','new')):
             status.update( dict( (item,r[1]) for item in r[0] ) )
             
         # Go over each artifact and perform the required action

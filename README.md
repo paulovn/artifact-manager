@@ -173,9 +173,9 @@ Selection options
 Options modifying the detection of artifact files are:
 
 * `--extensions` : a comma-separated list of the file extensions (with or
-  without a leading period) that will be collected as artifacts. Note that if 
-  the file name contains several dots, only the rightmost dot-extension will 
-  be considered.
+  without a leading period) that will be collected as artifacts. If the file 
+  name contains several dots, all possible concatenations of the dot segments 
+  will be tried against the passed list.
 * `--min-size`: the minimum size of an artifact file to be included in
   the list (0 for files of any size)
 * `--files`: files to be explicitly included as artifacts, if they exist,
