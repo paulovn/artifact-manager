@@ -23,7 +23,9 @@ size).  A hash is computed for each artifact, so that if the file contents
 changes it will be detected as a new object event if its name and place 
 remains the same (for the server they _are_ two different objects, and 
 there is no relationship between them). Objects retain information about 
-their name, path in the project tree and modification time.
+their name, path in the project tree and modification time. The same file 
+can be in several places in the project tree, and each place will be recorded 
+(but only one copy of the object will be uploaded to the repository).
 
 The general shape of the command-line is:
 
@@ -62,6 +64,12 @@ It accepts the following commands:
      as repository options
 
  * __rename-branch__  Change the name of a branch in the remote repo
+
+ * __setlog__  Set the log message for the branch in the remote repo. The log 
+     message is an arbitrary text associated to the branch. A branch has only 
+     one log message, so setting it overwrites the precious one.
+
+ * __getlog__  Get the log message for the branch from the remote repo
 
  * __remove-branch__  *future op*
 
@@ -143,8 +151,9 @@ Repository specification
 ------------------------
 
 A repository is defined on top of a transport layer (each transport
-endpoint can contain a number of repositories) with a string. On top
-of that, a branch is also an arbitrary string (usually with a path-like shape)
+endpoint can contain a number of repositories) by using a string 
+On top of that, a branch is also an arbitrary string (usually with a 
+path-like shape).
 
 These parameters can also be automatically defined if the project tree
 is a checked out Git repo. In this case Git is used to extract the
@@ -224,6 +233,7 @@ And the command-specific options are:
   downloaded to its correct place.
 * `--show-all`: for __diff__, list all the artifacts in both branches, also
   including the ones shared by both.
+* `--log`: for __branches__, show the log message for each listed branch
 
 
 Requirements

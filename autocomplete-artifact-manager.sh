@@ -9,7 +9,7 @@ __artifact_manager()
     cur="${COMP_WORDS[COMP_CWORD]}"
     if [[ "${COMP_CWORD}" == "1" ]]; then
 	# command completion
-	opts="list diff download get upload branches getoptions setoptions rename-branch"
+	opts="list diff download get upload branches getoptions setoptions rename-branch getlog setlog"
         COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
         return 0
     elif [[ "${cur:0:2}" = '--' ]]; then
@@ -18,6 +18,7 @@ __artifact_manager()
 	elif test "${COMP_WORDS[1]}" = "download"; then add=" delete-local"
 	elif test "${COMP_WORDS[1]}" = "diff";     then add=" show-all"
 	elif test "${COMP_WORDS[1]}" = "get";      then add=" outname"
+	elif test "${COMP_WORDS[1]}" = "branches"; then add=" log"
 	fi
 	opts="verbose dry-run server-url repo-name branch subdir project-dir extensions files min-size git-ignored$add"
         COMPREPLY=( $(compgen -P "--" -W "${opts}" -- "${cur:2}") )
@@ -27,7 +28,7 @@ __artifact_manager()
         COMPREPLY=( $(compgen -A file -- "${cur}") )
 	return 0
     fi
-	
+
 }
 
 complete -F __artifact_manager -o filenames artifact-manager
