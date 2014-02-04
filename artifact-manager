@@ -917,7 +917,7 @@ class ArtifactReader( object ):
         """
         Print out lists of item differences
          @param lists (dict): the lists to print, indexed by name
-         @param index (dict): the index of all itemts in the lists
+         @param index (dict): the index containing all items in the lists
         """
         for lnam,lval in lists.iteritems():
             if not lval:
@@ -961,8 +961,11 @@ class ArtifactReader( object ):
                            results ) )
         if not show_all:
             del lists['in both']
-        self._print_diff( lists, self.remote_index )
-        return True
+
+        # Print the lists
+        if args.verbose:
+            self._print_diff( lists, self.remote_index )
+        return lists
 
 
     def local_print_changes( self, local_basedir, branch_string, show_all ):
@@ -987,8 +990,9 @@ class ArtifactReader( object ):
             del lists['in both']
 
         # Print the lists
-        self._print_diff( lists, artifacts )
-        return True
+        if self.verbose:
+            mgr._print_diff( lists, artifacts )
+        return lists
 
 
     def _get_file( self, fileid, outname ):
@@ -1387,10 +1391,12 @@ if __name__ == "__main__":
     elif args.command in ('diff','check'):
 
         if args.other_branch:
-            r = mgr.diff( args.branch, args.other_branch, args.show_all )
+            l = mgr.diff( args.branch, args.other_branch, args.show_all )
         else:
-            r = mgr.local_print_changes( args.project_dir, args.branch, 
+            l = mgr.local_print_changes( args.project_dir, args.branch, 
                                          args.show_all )
+        # Exit code is the number of elements in the lists
+        r = sum( [ len(k) for k in l.itervalues() ] )
 
     elif args.command == 'download':
 
@@ -1441,4 +1447,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
 
-    sys.exit( not r )
+    # Exit with a suitable exit code
+    out = 0 if r is True else r
+    sys.exit( r )
