@@ -648,8 +648,8 @@ class ArtifactReader( object ):
         self.remote_branches = self._get_all_branches() # name : logmsg
         self.remote_index = self._get_index()           # sha : [object spec]
         # Initialize local lists
-        self.local_index = {}                           # sha : [object spec]
-        self.local_artifacts = defaultdict( list )      # sha : [list of files]
+        self.local_index = None                         # sha : [object spec]
+        self.local_artifacts = None                     # sha : [list of files]
 
 
     def _repo_connect( self, source, subrepo ):
@@ -771,13 +771,12 @@ class ArtifactReader( object ):
         Print out the list of artifacts in the remote repo that
         correspond to a given branch
         """
-        if branch_string == '.':
-            if not self.local_artifacts:
-                self._local_collect_list( local_basedir )
+        if branch_string == '.':        # gather local artifacts
+            self._local_collect_list( local_basedir )
             clist = self.local_artifacts
             index = self.local_index
-        else:
-            clist = self.get_branch(branch_string,return_none=True)
+        else:                           # gather remote artifacts
+            clist = self.get_branch( branch_string, return_none=True )
             index = self.remote_index
 
         if clist is None:
@@ -811,11 +810,15 @@ class ArtifactReader( object ):
         self.local_artifacts[k].append( visible_name )
 
 
-    def _local_collect_list( self, local_basedir ):
+    def _local_collect_list( self, local_basedir, reload=False ):
         """
         Get all artifacts in the local checked out repository, and populate 
         the object's structure
         """
+        if self.local_artifacts is not None and not reload:
+            return
+        self.local_index = {}                           # sha : [object spec]
+        self.local_artifacts = defaultdict( list )      # sha : [list of files]
         current = os.getcwd()
         os.chdir( local_basedir )
         try:
@@ -851,7 +854,6 @@ class ArtifactReader( object ):
                     fullname = fix_path( os.path.join(root,name) )
                     if os.path.islink( fullname ):
                         continue        # skip symbolic links to files
-
 
                     # Build the set of extensions for this file
                     e = name.lower().split(os.path.extsep)[1:]
@@ -895,10 +897,9 @@ class ArtifactReader( object ):
                (<same files>, <files only in local>, <files only in remote>)
         """
         # Compose dicts for local files & remote files
-        if not self.local_artifacts:
-            self._local_collect_list( local_basedir )
+        self._local_collect_list( local_basedir )
         #local_dict = dict([(k,v[3]) for k,v in self.local_artifacts.iteritems()])
-        remote_dict = self.get_branch(branch_string,return_none=True)
+        remote_dict = self.get_branch( branch_string, return_none=True )
 
         # Compare those dicts
         results = self._compare_lists( self.local_artifacts, remote_dict )
@@ -991,7 +992,7 @@ class ArtifactReader( object ):
 
         # Print the lists
         if self.verbose:
-            mgr._print_diff( lists, artifacts )
+            self._print_diff( lists, artifacts )
         return lists
 
 
@@ -1166,7 +1167,7 @@ class ArtifactManager( ArtifactReader ):
         with closing(StringIO.StringIO(msg)) as buffer:
             self.writer.update( buffer, dest_name )
         
-    def put_branch_filelist( self, branch_string ):
+    def _put_branch_filelist( self, branch_string ):
         """Put in the remote repository the list of objects for one branch"""
         # Compose the final name & ensure the destination folder exists
         dest_name = os.path.join( REFS, branch_string )
@@ -1187,7 +1188,7 @@ class ArtifactManager( ArtifactReader ):
             self.writer.update( buffer, dest_name )
 
 
-    def put_index( self ):
+    def _put_index( self ):
         buffer = StringIO.StringIO()
         for item in sorted(self.remote_index):
             v = self.remote_index[item]
@@ -1274,12 +1275,12 @@ class ArtifactManager( ArtifactReader ):
 
         # Now upload the list of files for this branch and update remote indices
         if not self.dry_run:
-            self.put_branch_filelist( branch_string )
+            self._put_branch_filelist( branch_string )
             if branch_string not in self.remote_branches.keys():
                 self.remote_branches[branch_string] = ''
                 self.put_branches_list()
             if len(newf):
-                self.put_index()
+                self._put_index()
         return True
 
 
@@ -1448,5 +1449,5 @@ if __name__ == "__main__":
 
 
     # Exit with a suitable exit code
-    out = 0 if r is True else r
+    out = r is False
     sys.exit( r )
