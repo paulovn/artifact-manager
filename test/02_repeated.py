@@ -1,3 +1,7 @@
+"""
+Test the Artifact management when there are repeated artifacts
+(i.e. same file in two places in the local dir)
+"""
 
 import datetime
 
@@ -5,8 +9,8 @@ import unittest
 import pprint
 
 from testaux import REPO_NAME, BRANCH_NAME
-from testaux.am import am_mod, am_args
-from testaux.server import createTmpServer, deleteTmpServer
+from testaux.am import am_mod, am_args_defaults
+from testaux.server import TmpServer
 from testaux.project import TmpProject
 
 
@@ -16,16 +20,14 @@ class TestRepeatedArtifact( unittest.TestCase ):
 
     def setUp(self):
         # Create an artifact server and a project to upload
-        self.base = createTmpServer( REPO_NAME )
+        self.server = TmpServer( REPO_NAME )
         self.project = TmpProject( repeat=2 )
         # Create the repo & upload the project artifacts
-        self.args = am_args( { 'server_url': self.base,
-                               'repo_name' : REPO_NAME,
-                               'project_dir' : self.project.dir } )
+        self.args = am_args_defaults( self.server, self.project )
         self.mgr = am_mod.ArtifactManager( self.args )
 
     def tearDown(self):
-        deleteTmpServer( self.base )
+        self.server.delete()
         self.project.delete()
 
 

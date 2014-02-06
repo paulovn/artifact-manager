@@ -5,8 +5,8 @@ import unittest
 import pprint
 
 from testaux import REPO_NAME, BRANCH_NAME
-from testaux.am import am_mod, am_args
-from testaux.server import createTmpServer, deleteTmpServer
+from testaux.am import am_mod, am_args_defaults
+from testaux.server import TmpServer
 from testaux.project import TmpProject
 
 
@@ -16,38 +16,59 @@ class TestBasic( unittest.TestCase ):
 
     def setUp(self):
         # Create an artifact server and a project to upload
-        self.base = createTmpServer( REPO_NAME )
+        self.server = TmpServer( REPO_NAME )
         self.project = TmpProject()
+        from __main__ import testrunner
         # Create the repo & upload the project artifacts
-        self.args = am_args( { 'server_url': self.base,
-                               'repo_name' : REPO_NAME,
-                               'project_dir' : self.project.dir } )
-        self.mgr = am_mod.ArtifactManager( self.args )
+        self.args = am_args_defaults( self.server, self.project )
+        self.mgr  = am_mod.ArtifactManager( self.args )
 
     def tearDown(self):
-        deleteTmpServer( self.base )
+        self.server.delete()
         self.project.delete()
 
 
     def test01_upload(self):
         """Upload artifacts"""
         r = self.mgr.upload_artifacts( self.args.project_dir, BRANCH_NAME )
-        self.assertTrue( r, "uploaded" )
+        self.assertEquals( 2, r, "uploaded" )
 
 
     def test02_repeated_upload(self):
-        """Upload artifacts"""
+        """Upload artifacts, twice"""
         r = self.mgr.upload_artifacts( self.args.project_dir, BRANCH_NAME )
-        self.assertTrue( r, "uploaded" )
+        self.assertEquals( r, 2, "upload" )
         # Try to upload without overwrite
         r = self.mgr.upload_artifacts( self.args.project_dir, BRANCH_NAME )
-        self.assertFalse( r, "not uploaded" )
+        self.assertIs( r, False, "upload fail" )
         # Now upload with overwrite
         r = self.mgr.upload_artifacts( self.args.project_dir, BRANCH_NAME, True )
-        self.assertTrue( r, "re-uploaded" )
+        self.assertEquals( r, 0, "re-upload" )   # no new artifacts
 
 
-    def test10_diff(self):
+    def test10_download_nobranch(self):
+        """Download artifacts - no branch"""
+        r = self.mgr.download_artifacts( BRANCH_NAME, self.args.project_dir )
+        self.assertIs( r, False, "downloaded non-existing branch" )
+
+
+    def test11_download_nonew(self):
+        """Download artifacts - no new files"""
+        r = self.mgr.upload_artifacts( self.args.project_dir, BRANCH_NAME )
+        r = self.mgr.download_artifacts( BRANCH_NAME, self.args.project_dir )
+        self.assertEquals( r, 0, "no downloads" )
+
+
+    def test12_download(self):
+        """Download artifacts"""
+        r = self.mgr.upload_artifacts( self.args.project_dir, BRANCH_NAME )
+        self.project.deleteArtifact()
+        self.mgr._reset_lists() # clean cache in the object
+        r = self.mgr.download_artifacts( BRANCH_NAME, self.args.project_dir )
+        self.assertEquals( r, 1, "download 1 file" )
+
+
+    def test20_diff(self):
         """Test diff before & after uploading"""
         # Test before uploading
         l = self.mgr.local_print_changes( self.args.project_dir,
@@ -64,7 +85,7 @@ class TestBasic( unittest.TestCase ):
         self.assertEquals( 0, len(l['only in server']), "no changes" )
 
 
-    def test11_diff_all(self):
+    def test21_diff_all(self):
         """Test diff before & after uploading, show all files"""
         # Test before uploading
         l = self.mgr.local_print_changes( self.args.project_dir,

@@ -63,3 +63,12 @@ class TmpProject( object ):
         d1 = os.path.join(self.dir,'dir1')
         d2 = os.path.join(self.dir,'dir2')
         os.rename( os.path.join(d1,artifact), os.path.join(d2,outname) )
+
+    # -------------------------------------------------------------------
+
+    def deleteArtifact( self, artifact='artifactB.zip' ):
+        """
+        Delete one artifact in the local project
+        """
+        d1 = os.path.join(self.dir,'dir1')
+        os.unlink( os.path.join(d1,artifact) )

@@ -102,7 +102,8 @@ for test in test_list:
 if not opt.quiet:
     print "\n\nRunning test suite\n"
 try:
-    unittest.TextTestRunner( verbosity=opt.verbosity ).run( suite )
+    testrunner = unittest.TextTestRunner( verbosity=opt.verbosity )
+    testrunner.run( suite )
 except KeyboardInterrupt as err:
     print "Interrupted!! :", err
     sys.exit(1)
