@@ -43,19 +43,28 @@ opt = type( "options", (),
         
 
 # Detect '-l', '-v', '-q', '-a' options
-while len(sys.argv) > 1 and sys.argv[1].startswith('-'):
-    if sys.argv[1] == '-l':
+while len(sys.argv) > 1 and sys.argv[1].startswith('-'): 
+    if sys.argv[1] == '-h':
+        print "  Execute unit tests"
+        print "  Usage: python test [-l] [-q | -v | -vv] [-a] [-e <name>] [name] .."
+        sys.exit(1)
+    elif sys.argv[1] == '-l':
         opt.list = True
     elif sys.argv[1] == '-q':
         opt.quiet = True
     elif sys.argv[1] == '-v':
         opt.verbosity = 2
+    elif sys.argv[1] == '-vv':
+        opt.verbosity = 3
     elif sys.argv[1] in ('-a','-all'):
         opt.all = True
     elif sys.argv[1] in ('-e','--exclude') and len(sys.argv) > 2:
         opt.exclude = sys.argv[2].split(',')
         sys.argv.pop(1)
+    else:
+        print "Warning: unknown option", sys.argv[1]
     sys.argv.pop(1)    # remove the just-used argument
+
 
 # Select the test(s) to run
 if __name__ != '__main__' or len(sys.argv) < 2 or opt.all:

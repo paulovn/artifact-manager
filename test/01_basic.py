@@ -37,19 +37,19 @@ class TestBasic( unittest.TestCase ):
     def test02_repeated_upload(self):
         """Upload artifacts, twice"""
         r = self.mgr.upload_artifacts( self.args.project_dir, BRANCH_NAME )
-        self.assertEquals( r, 2, "upload" )
+        self.assertEquals( 2, r, "uploaded" )
         # Try to upload without overwrite
         r = self.mgr.upload_artifacts( self.args.project_dir, BRANCH_NAME )
-        self.assertIs( r, False, "upload fail" )
+        self.assertIs( False, r, "upload should fail" )
         # Now upload with overwrite
         r = self.mgr.upload_artifacts( self.args.project_dir, BRANCH_NAME, True )
-        self.assertEquals( r, 0, "re-upload" )   # no new artifacts
+        self.assertEquals( 0, r, "re-upload, no new" )   # no new artifacts
 
 
     def test10_download_nobranch(self):
         """Download artifacts - no branch"""
         r = self.mgr.download_artifacts( BRANCH_NAME, self.args.project_dir )
-        self.assertIs( r, False, "downloaded non-existing branch" )
+        self.assertIs( False, r, "downloaded non-existing branch" )
 
 
     def test11_download_nonew(self):

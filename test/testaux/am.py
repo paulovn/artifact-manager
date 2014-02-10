@@ -33,7 +33,7 @@ def am_args_defaults( server, project ):
     """
     try:
         from __main__ import testrunner
-        verbosity = testrunner.verbosity - 1
+        verbosity = max(testrunner.verbosity-2,0)
     except ImportError:
         verbosity = 0
     return am_args( { 'server_url': server.dir,

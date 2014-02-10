@@ -6,7 +6,8 @@ inside the project structure and you're done.
 Documentation on usage and requirements is included in README.md
 
 A number of unit tests have been prepared. To execute them, simple call Python
-on the test directory, i.e. "python ./test"
+on the test directory, i.e. "python ./test". You can also execute only some of 
+the tests by specifying the file names "python ./test <name> ..."
 
 There is also a Bash completion script, to ease working with the script in 
 the command line.

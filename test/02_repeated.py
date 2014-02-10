@@ -34,7 +34,7 @@ class TestRepeatedArtifact( unittest.TestCase ):
     def test01_upload(self):
         """Upload artifacts"""
         r = self.mgr.upload_artifacts( self.args.project_dir, BRANCH_NAME )
-        self.assertTrue( r, "uploaded" )
+        self.assertEquals( 2, r, "uploaded files" )
 
 
     def test02_diff(self):
@@ -45,7 +45,7 @@ class TestRepeatedArtifact( unittest.TestCase ):
         self.assertEquals( 3, len(l['only in local']), "detected changes" )
         # Upload
         r = self.mgr.upload_artifacts( self.args.project_dir, BRANCH_NAME )
-        self.assertTrue( r, "uploaded" )
+        self.assertEquals( 2, r, "uploaded" )
         # Test after uploading
         l = self.mgr.local_print_changes( self.args.project_dir,
                                           BRANCH_NAME, False )

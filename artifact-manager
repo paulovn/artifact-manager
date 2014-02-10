@@ -760,12 +760,12 @@ class ArtifactReader( object ):
         """
         if self.verbose:
             print "\n# Info: list remote branches"
-        if logs:
-            self.remote_branches = self._get_all_branches( True )
-        for b in sorted(self.remote_branches.keys()):
-            print '*' if b == current_branch else ' ',
-            print b if not logs else "%s : %s\n" % (b, self.remote_branches[b])
-        return True
+            if logs:
+                self.remote_branches = self._get_all_branches( True )
+            for b in sorted(self.remote_branches.keys()):
+                print '*' if b == current_branch else ' ',
+                print b if not logs else "%s : %s\n" % (b, self.remote_branches[b])
+        return self.remote_branches.keys()
 
 
     def list_artifacts( self, branch_string, local_basedir ):
@@ -957,7 +957,7 @@ class ArtifactReader( object ):
         list1 = self.get_branch( branch1, return_none=True )
         list2 = self.get_branch( branch2, return_none=True )
         results = self._compare_lists( list1, list2 )
-        if self.verbose:
+        if self.verbose > 1:
             subd = " for subdir '%s'" % self.subdir if self.subdir else ''
             print "\n# Info: compare branches '%s' & '%s'%s" % (branch1,branch2,subd)
         lists = dict( zip( ('in both','only in '+branch1,'only in '+branch2),
@@ -966,7 +966,7 @@ class ArtifactReader( object ):
             del lists['in both']
 
         # Print the lists
-        if args.verbose:
+        if self.verbose:
             self._print_diff( lists, self.remote_index )
         return lists
 
@@ -977,7 +977,7 @@ class ArtifactReader( object ):
         and the contents in the remote repo
         """
         results, artifacts = self.local_check_list(local_basedir,branch_string)
-        if self.verbose:
+        if self.verbose > 1:
             print "\n# Info: check local artifacts against '%s'" % branch_string
             if self.subdir:
                 print "# for subdir '%s'" % self.subdir
@@ -1026,7 +1026,7 @@ class ArtifactReader( object ):
           @param remove_old (bool): whether to delete local artifact files not
             in the remote repo
         """
-        if self.verbose:
+        if self.verbose > 1:
             print "\n# Info: download artifacts for '%s'" % branch_string
             if self.subdir:
                 print "# for subdir '%s'" % self.subdir
@@ -1075,7 +1075,7 @@ class ArtifactReader( object ):
         """
         Fetch a file from a branch in remote repo
         """
-        if self.verbose:
+        if self.verbose > 1:
             print "\n# Info: download remote artifact '%s' @ '%s'" % (filename,branch)
             if self.dry_run:
                 print "** DRY RUN"
@@ -1086,7 +1086,8 @@ class ArtifactReader( object ):
         for k,v in files.iteritems():
             if v == filename:
                 if not self.dry_run:
-                    print "[DOWNLOADING]"
+                    if self.verbose:
+                        print "[DOWNLOADING]"
                     self._get_file( k, outname )
                 return True
         print "Error: can't find the file in branch '%s'" % branch
@@ -1246,6 +1247,7 @@ class ArtifactManager( ArtifactReader ):
           @param branch_string (str): identifier for the branch to upload to
           @param overwrite (bool): if the branch already exists in the
             remote repository, upload will fail unless this is \c True
+          @return (int): nnumber of uploaded files
         """
         # Check if this branch already has a remote entry, and bark if so
         # and we're not in overwrite mode
@@ -1261,7 +1263,7 @@ class ArtifactManager( ArtifactReader ):
         newf = dict( (sha,self.local_artifacts[sha])
                      for sha in self.local_artifacts 
                      if sha not in self.remote_index )
-        if self.verbose:
+        if self.verbose > 1:
             print "\n# Info: Uploading local artifacts to '%s'" % branch_string
             print "  total local artifacts: ", len(self.local_artifacts)
             print "  already in repo: ", len(self.local_artifacts) - len(newf)
@@ -1300,9 +1302,9 @@ class ArtifactManager( ArtifactReader ):
 
 if __name__ == "__main__":
 
-
+    # Generic arguments
     gnric = argparse.ArgumentParser( add_help=False )
-    gnric.add_argument('--verbose', '-v', type=int, default=1, help='Verbose mode')
+    gnric.add_argument('--verbose', '-v', type=int, default=2, help='verbose mode (0-2), default: %(default)d')
     gnric.add_argument('--dry-run', action='store_true', help="don't modify files, locally or remotely" )
     gnric.add_argument('--server-url', '-u', default=','.join(REPO_URL),
     help='Base URL for the repository server (default: %(default)s)' )
