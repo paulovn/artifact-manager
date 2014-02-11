@@ -759,7 +759,8 @@ class ArtifactReader( object ):
         Print out the list of branches in the remote repo
         """
         if self.verbose:
-            print "\n# Info: list remote branches"
+            if self.verbose > 1:
+                print "\n# Info: list remote branches"
             if logs:
                 self.remote_branches = self._get_all_branches( True )
             for b in sorted(self.remote_branches.keys()):
@@ -1068,7 +1069,6 @@ class ArtifactReader( object ):
                 os.unlink( os.path.join(local_basedir,outname) )
 
         return downloaded
-
 
 
     def get( self, filename, branch, outname ):
@@ -1460,6 +1460,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
 
-    # Exit with a suitable exit code
+    # Exit with an appropriate exit code
     out = r is False
-    sys.exit( r )
+    sys.exit( out )
