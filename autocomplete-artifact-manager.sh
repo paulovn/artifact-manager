@@ -17,6 +17,7 @@ __artifact_manager()
 	if   test "${COMP_WORDS[1]}" = "upload";   then add=" overwrite"
 	elif test "${COMP_WORDS[1]}" = "download"; then add=" delete-local"
 	elif test "${COMP_WORDS[1]}" = "diff";     then add=" show-all"
+	elif test "${COMP_WORDS[1]}" = "list";     then add=" show-all"
 	elif test "${COMP_WORDS[1]}" = "get";      then add=" outname"
 	elif test "${COMP_WORDS[1]}" = "branches"; then add=" log"
 	fi
