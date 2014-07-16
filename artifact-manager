@@ -247,7 +247,9 @@ def git_find_info( what, repo_dir ):
         return output
 
 # ---------------------------------------------------------------------
-        
+# Read-only transports need to support two methods:
+#  * exists
+#  * get        
 
 class WebTransport( object ):
     """
@@ -258,6 +260,32 @@ class WebTransport( object ):
         self._base = posixjoin( url_base, subrepo )
         if not self._base.endswith('/'):
             self._base += '/'
+
+    def exists( self, path ):
+        """
+        Test if a path exists in the repository, by sending a HEAD request
+          @return (bool): \c True or \c False depending on the status received
+            from the server
+          @except TransportError on any access errors other than a 404
+            (Not Found) status code.
+        """
+        url = self._base + path
+        request = urllib2.Request(url)
+        request.get_method = lambda : 'HEAD'
+        try:
+            response = urllib2.urlopen(request)
+            return True
+        except ValueError as e:
+            raise TransportError( "can't access '%s' : invalid url" % url )
+        except urllib2.HTTPError as e:
+            if e.code == 404:
+                return False
+            raise TransportError( "can't access '%s' (%d): %s" % 
+                                  (url,e.code,str(e.reason)) )
+        except urllib2.URLError as e:
+            raise TransportError( "can't access '%s' : %s" % 
+                                  (url,str(e.reason)) )
+
 
     def get( self, source_name, dest ):
         """
@@ -285,32 +313,17 @@ class WebTransport( object ):
             #status = status + chr(8)*(len(status)+1)
             #print status,
 
-    def exists( self, path ):
-        """
-        Test if a path exists in the repository, by sending a HEAD request
-          @return (bool): \c True or \c False depending on the status received
-            from the server
-          @except TransportError on any access errors other than a 404
-            (Not Found) status code.
-        """
-        url = self._base + path
-        request = urllib2.Request(url)
-        request.get_method = lambda : 'HEAD'
-        try:
-            response = urllib2.urlopen(request)
-            return True
-        except ValueError as e:
-            raise TransportError( "can't access '%s' : invalid url" % url )
-        except urllib2.HTTPError as e:
-            if e.code == 404:
-                return False
-            raise TransportError( "can't access '%s' (%d): %s" % 
-                                  (url,e.code,str(e.reason)) )
-        except urllib2.URLError as e:
-            raise TransportError( "can't access '%s' : %s" % 
-                                  (url,str(e.reason)) )
             
 # ---------------------------------------------------------------------
+# Read-write transports inherit from BaseWTransport. They need to support:
+#  * get
+#  * otype
+#  * init_base
+#  * put
+#  * delete
+#  * rename
+#  * folder_create
+
 
 class BaseWTransport( object ):
     """
@@ -321,7 +334,7 @@ class BaseWTransport( object ):
         """Ensure a path exists in the repository. Create it if not"""
         if not folder:
             raise InvalidArgumentError('empty folder')
-        t = self.check( folder )
+        t = self.otype( folder )
         if t == 'D':
             return
         elif t == 'F':
@@ -330,6 +343,13 @@ class BaseWTransport( object ):
         if parent:
             self.folder_ensure( parent )
         self.folder_create( folder )
+
+    def exists( self, path ):
+        """
+        Test if a path exists in the repository
+        """
+        check = self.otype( path )
+        return check in ('F','D')
 
     def update( self, source, destname ):
         """
@@ -362,12 +382,6 @@ class LocalTransport( BaseWTransport ):
         """Ensure the base path for the repository exists"""
         mkpath_recursive( self._basedir )
         
-    def exists( self, path ):
-        """
-        Test if a path exists in the repository
-        """
-        check = self.check( path )
-        return check in ('F','D')
 
     def get( self, sourcename, dest ):
         """
@@ -390,6 +404,22 @@ class LocalTransport( BaseWTransport ):
                 return False
             raise
         
+    def otype( self, path ):
+        """
+        Given the path of am object, return:
+          * 'F' for a file, 
+          * 'D' for a directory,
+          * \c None if the path does not exist
+        """
+        oldname = os.path.join(self._basedir,path)
+        try:
+            mode = os.stat( oldname ).st_mode
+        except OSError as e:
+            if e.errno == errno.ENOENT:
+                return None
+            raise
+        return 'D' if stat.S_ISDIR(mode) else 'F' if stat.S_ISREG(mode) else '?'
+
     def put( self, source, destname ):
         """
         Store a file. If a file with the same name existed, it is overwritten
@@ -420,20 +450,6 @@ class LocalTransport( BaseWTransport ):
         newname = os.path.join(self._basedir,newname)
         os.rename( oldname, newname )
 
-    def check( self, path ):
-        """
-        Given a path component, return 'F' for a file, 
-        'D' for a directory, or \c None if the path does not exist
-        """
-        oldname = os.path.join(self._basedir,path)
-        try:
-            mode = os.stat( oldname ).st_mode
-        except OSError as e:
-            if e.errno == errno.ENOENT:
-                return None
-            raise
-        return 'D' if stat.S_ISDIR(mode) else 'F' if stat.S_ISREG(mode) else '?'
-
     def folder_create( self, path ):
         """
         Make a folder in the repository, assuming all parent folders exist
@@ -443,6 +459,7 @@ class LocalTransport( BaseWTransport ):
     def folder_list( self, path ):
         """
         Return the list of all components (files & folders) in a folder
+        *This method is optional*
         """
         return os.listdir( os.path.join(self._basedir,path) )
 
@@ -494,7 +511,7 @@ class SMBTransport( BaseWTransport ):
     def rename( self, oldname, newname ):
         pass
 
-    def check( self, path ):
+    def otype( self, path ):
         """
         Given a path component, return 'F' for a file, 
         'D' for a directory, or None if the path does not exist
@@ -568,7 +585,13 @@ def size_string(size):
     return "%.*f%s"%(precision,size,suffixes[suffixIndex])
 
 def item_string(entry,subdir,path=None):
-    """Return the item description corresponding to an object, as a string"""
+    """
+    Return the item description corresponding to an object, as a string
+      @param entry (list): the object record, in the index
+      @param subdir (str or None): an optional subdirectory to take out of the
+        filename
+      @param path (str): the filename to print (overrides the one in the index)
+    """
     start = 0 if subdir is None else len(subdir)
     if path is None:
         path = entry[3]
@@ -778,6 +801,10 @@ class ArtifactReader( object ):
             self._local_collect_list( local_basedir )
             clist = self.local_artifacts
             index = self.local_index
+        elif branch_string is None:
+            clist = dict( [(k,[self.remote_index[k][3]])
+                          for k in self.remote_index.iterkeys()] )
+            index = self.remote_index
         else:                           # gather remote artifacts
             clist = self.get_branch( branch_string, return_none=True )
             index = self.remote_index
@@ -793,7 +820,7 @@ class ArtifactReader( object ):
                 print "remote artifacts for '%s'" % branch_string
 
         for k,v in sorted( clist.iteritems(), key=lambda e : e[1] ):
-            if self.subdir and not v.startswith(self.subdir):
+            if self.subdir and not v[0].startswith(self.subdir):
                 continue
             print item_string(index[k],self.subdir,v[0])
             for item in v[1:]:
@@ -1118,7 +1145,7 @@ class ArtifactManager( ArtifactReader ):
         # Parent constructor will read the remote repository metadata
         super(ArtifactManager,self).__init__( options )
         # Now initialize the repository if it happens to be empty
-        if not self.writer.check( INDEX ) and not self.dry_run:
+        if not self.writer.exists( INDEX ) and not self.dry_run:
             self.repo_init( options )
 
     def _repo_connect( self, source, subrepo ):
@@ -1314,7 +1341,7 @@ if __name__ == "__main__":
     gnric.add_argument('--project-dir', '-d', default=os.getcwd(), help='local folder to use as tree root (default: %(default)s)')
 
     gnric.add_argument('--extensions', '-e', help='extensions to consider as artifacts (default: '+','.join(DEFAULT_OPTIONS['extensions'])+')', default=None )
-    gnric.add_argument('--files', '-f', help='files to add explicitly as artifacts (full path)', default=None, nargs='+' )
+    gnric.add_argument('--files', '-f', help='files to add explicitly as artifacts (full path within the project)', metavar="FILE", default=None, nargs='+' )
     gnric.add_argument('--min-size', type=int, help='minimum size in bytes of an artifact to be considered (default: ' +str(DEFAULT_OPTIONS['min_size'])+')', default=None )
     gnric.add_argument('--git-ignored', action='store_true', help='define as artifacts all files ignored by git in the local repo' )
 
@@ -1326,6 +1353,8 @@ if __name__ == "__main__":
 
     s1 = subp.add_parser( 'list', help='list the artifacts in remote repo', 
                           parents=[gnric] )
+    s1.add_argument('--all', action='store_true',
+                    help='list artifacts in all branches')
 
     s2 = subp.add_parser( 'diff', help='compare two artifact lists',
                           parents=[gnric]  )
@@ -1395,7 +1424,8 @@ if __name__ == "__main__":
     # Do the operation
     if args.command == 'list':
 
-        r = mgr.list_artifacts( args.branch, args.project_dir )
+        b = args.branch if not args.all else None
+        r = mgr.list_artifacts( b, args.project_dir )
 
     elif args.command == 'branches':
 
