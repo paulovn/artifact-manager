@@ -816,10 +816,14 @@ class ArtifactReader( object ):
             print "\n# Info: list",
             if branch_string == '.':
                 print "local artifacts"
+            elif branch_string is None:
+                print "remote artifacts across all branches"
             else:
                 print "remote artifacts for '%s'" % branch_string
 
-        for k,v in sorted( clist.iteritems(), key=lambda e : e[1] ):
+        # List all items. Sort by name (first instance), then by date
+        for k,v in sorted( clist.iteritems(), 
+                           key = lambda e : (e[1],index[e[0]][0]) ):
             if self.subdir and not v[0].startswith(self.subdir):
                 continue
             print item_string(index[k],self.subdir,v[0])
@@ -1353,7 +1357,7 @@ if __name__ == "__main__":
 
     s1 = subp.add_parser( 'list', help='list the artifacts in remote repo', 
                           parents=[gnric] )
-    s1.add_argument('--all', action='store_true',
+    s1.add_argument('--show-all', '-a', action='store_true',
                     help='list artifacts in all branches')
 
     s2 = subp.add_parser( 'diff', help='compare two artifact lists',
@@ -1424,7 +1428,7 @@ if __name__ == "__main__":
     # Do the operation
     if args.command == 'list':
 
-        b = args.branch if not args.all else None
+        b = args.branch if not args.show_all else None
         r = mgr.list_artifacts( b, args.project_dir )
 
     elif args.command == 'branches':
