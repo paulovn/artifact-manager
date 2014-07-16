@@ -232,7 +232,8 @@ And the command-specific options are:
   (i.e. move to it or set `--project-dir`), otherwise artifacts will not be 
   downloaded to its correct place.
 * `--show-all`: for __diff__, list all the artifacts in both branches, also
-  including the ones shared by both.
+  including the ones shared by both. For __list__, list all artifacts in all
+  branches, not only the current one.
 * `--log`: for __branches__, show the log message for each listed branch
 
 
