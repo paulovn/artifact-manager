@@ -15,37 +15,12 @@ Accepts as transport layers:
 
 """
 
-import os
-import sys
-import argparse
-import errno
-import subprocess
-import stat
-import re
-import ast
-import urllib2
-import hashlib
-import getpass
-import glob
-from datetime import datetime
-from posixpath import join as posixjoin
-from HTMLParser import HTMLParser
-from ConfigParser import SafeConfigParser, NoSectionError, NoOptionError
-from socket import gethostname, gethostbyname
-from operator import itemgetter
-from collections import defaultdict
 
-from contextlib import closing
-try:
-    import cStringIO as StringIO
-except ImportError:
-    import StringIO
-try:
-    import smb.SMBConnection
-    from nmb.NetBIOS import NetBIOS
-    from mySMB import mySMBConnection
-except ImportError:
-    pass
+# ********************************************************************** <====
+
+import sys
+
+# ---------------------------------------------------------------------
 
 
 # Default URLs for the artifacts repository (as R & R/W transports)
@@ -100,21 +75,6 @@ repository, it cannot be managed at all via Git commands.
 </body></html>""".format(WHEREAMI)
 
 
-class MLStripper(HTMLParser):
-    def __init__(self):
-        self.reset()
-        self.fed = []
-    def handle_data(self, d):
-        self.fed.append(d)
-    def get_data(self):
-        return ''.join(self.fed)
-
-def strip_tags(html):
-    """A function to remove all HTML tags from a text buffer"""
-    s = MLStripper()
-    s.feed(html)
-    return s.get_data()
-
 # ---------------------------------------------------------------------
 
 class GenericError( Exception ):
@@ -136,115 +96,14 @@ class InvalidArgumentError( GenericError ):
         super(InvalidArgumentError,self).__init__('Invalid Argument',msg,*args)
 
 
-# ---------------------------------------------------------------------
-
-def parse_unc( unc, subpath ):
-    """
-    Parse a Windows UNC path, possibly including host, user, password, domain 
-    and share. The full specification of the UNC string is:
-
-                \\domain\user:password@host\share\path
-
-      @param unc (str): the UNC path. If it does not contain password
-        information, it will be prompted to the console
-      @param subpath (str): an optional subpath to add at the end of the 
-        UNC path
-      @return (dict): the result data, separated by component
-    """
-    m = re.match( r"""\\\\
-                      (?: (?: (?P<domain>[-.\w]+) \\ )?
-                              (?P<user>\w+)
-                              (?: : (?P<pass>\w+) )?
-                       @ )?
-                      (?P<host>[-.\w]+)
-                      \\
-                      (?P<share>[^\\]+)
-                      (?: \\
-                          (?P<path>.+) )?""", unc, re.X )
-    if not m:
-        raise InvalidArgumentError( 'can\'t understand SMB UNC: %' % unc )
-    d = m.groupdict()
-    if d['user'] is None:
-        d['user'] = os.getlogin()
-    if d['domain'] is None:
-        d['domain'] = DOMAIN
-    if d['pass'] is None:
-        d['pass'] = getpass.getpass("Please insert password for SMB user '{domain}\\{user}' on {host}: ".format( **d ) )
-    d['path'] = os.path.join(d['path'], subpath) if d['path'] else subpath
-    #print d
-    return d
+import os
+import sys
+import errno
+import urllib2
+from posixpath import join as posixjoin
 
 
-def mkpath_recursive(path):
-    """Test a local path and, if it does not exist, create it recursively"""
-    try:
-        mode = os.stat( path ).st_mode
-        if not stat.S_ISDIR(mode):
-            raise InvalidArgumentError("parent path '"+str(path)+"' not a dir")
-    except OSError as e:
-        if e.errno != errno.ENOENT:
-            raise
-        (head,tail) = os.path.split( path )
-        if head:
-            mkpath_recursive( head )
-        os.mkdir( path )
 
-
-def git_find_info( what, repo_dir ):
-    """
-    Find information about a git repository. Try first calling the git
-    command line directly; if that fails search within git internals
-    """
-    class StrippedFile(file):
-        """A small helper class to read a config file with leading spaces"""
-        def readline(self):
-            return super(StrippedFile, self).readline().strip()
-
-    # Range of git commands we can execute
-    commands = { 'remote' : ['git','config','--get', 'remote.origin.url'],
-                 'branch' : ['git','rev-parse','--abbrev-ref','HEAD'],
-                 'ignored' : ['git','ls-files','-o','-i', '--exclude-standard']
-               }
-
-    # Execute git. If that fails, try digging into .git repo dir directly
-    try:
-
-        cmd = commands[what]
-        if sys.version_info < (2,7):
-            r = subprocess.Popen(cmd,cwd=repo_dir,stdout=subprocess.PIPE).communicate()[0]
-        else:
-            r = subprocess.check_output(cmd,cwd=repo_dir)
-        output = r.rstrip()
-
-    except Exception as e:
-        if hasattr(e,'errno') and e.errno == errno.ENOENT:
-            raise InvalidArgumentError("can't find directory: '%s'" % repo_dir)
-        elif what == 'ignored':
-            raise InvalidArgumentError("can't use --git-ignored option: git execution failed: " + str(e) )
-
-        try:
-            if what == 'remote':
-                c = SafeConfigParser()
-                with StrippedFile(os.path.join(repo_dir,'.git','config')) as f:
-                    c.readfp(f)
-                    output = c.get('remote "origin"','url')
-            else:       # what == 'branch'
-                with open(os.path.join(repo_dir,'.git','HEAD')) as f:
-                    data = f.readline().rstrip()
-                return data.split('refs/heads/')[-1]
-        except Exception as e:
-            if hasattr(e,'errno') and e.errno == errno.ENOENT:
-                raise InvalidArgumentError("can't find git metadata in '%s'" % repo_dir)
-
-    # Terminate output parsing
-    if what == 'remote':
-        (head,tail) = output.split(':')
-        (repo_name,ext) = os.path.splitext( tail )
-        return repo_name
-    elif what == 'ignored':
-        return output.splitlines()
-    else:
-        return output
 
 # ---------------------------------------------------------------------
 # Read-only transports need to support two methods:
@@ -314,6 +173,11 @@ class WebTransport( object ):
             #print status,
 
             
+
+import os.path
+
+
+            
 # ---------------------------------------------------------------------
 # Read-write transports inherit from BaseWTransport. They need to support:
 #  * get
@@ -357,6 +221,33 @@ class BaseWTransport( object ):
         """
         self.put( source, destname + '.new' )
         self.rename( destname + '.new', destname )
+
+
+import os
+import sys
+import errno
+import stat
+import re
+
+
+# ---------------------------------------------------------------------
+
+def mkpath_recursive(path):
+    """Test a local path and, if it does not exist, create it recursively"""
+    try:
+        mode = os.stat( path ).st_mode
+        if not stat.S_ISDIR(mode):
+            raise InvalidArgumentError("parent path '"+str(path)+"' not a dir")
+    except OSError as e:
+        if e.errno != errno.ENOENT:
+            raise
+        (head,tail) = os.path.split( path )
+        if head:
+            mkpath_recursive( head )
+        os.mkdir( path )
+
+
+# ---------------------------------------------------------------------
 
 
 class LocalTransport( BaseWTransport ):
@@ -464,6 +355,70 @@ class LocalTransport( BaseWTransport ):
         return os.listdir( os.path.join(self._basedir,path) )
 
 
+
+import os
+import sys
+import errno
+import stat
+import re
+import getpass
+
+from datetime import datetime
+from socket import gethostname, gethostbyname
+
+try:
+    import smb.SMBConnection
+    from nmb.NetBIOS import NetBIOS
+    from mySMB import mySMBConnection
+except ImportError:
+    pass
+
+
+
+# ---------------------------------------------------------------------
+
+def parse_unc( unc, subpath ):
+    """
+    Parse a Windows UNC path, possibly including host, user, password, domain 
+    and share. The full specification of the UNC string is:
+
+                \\domain\user:password@host\share\path
+
+      @param unc (str): the UNC path. If it does not contain password
+        information, it will be prompted to the console
+      @param subpath (str): an optional subpath to add at the end of the 
+        UNC path
+      @return (dict): the result data, separated by component
+    """
+    m = re.match( r"""\\\\
+                      (?: (?: (?P<domain>[-.\w]+) \\ )?
+                              (?P<user>\w+)
+                              (?: : (?P<pass>\w+) )?
+                       @ )?
+                      (?P<host>[-.\w]+)
+                      \\
+                      (?P<share>[^\\]+)
+                      (?: \\
+                          (?P<path>.+) )?""", unc, re.X )
+    if not m:
+        raise InvalidArgumentError( 'can\'t understand SMB UNC: %' % unc )
+    d = m.groupdict()
+    if d['user'] is None:
+        d['user'] = os.getlogin()
+    if d['domain'] is None:
+        d['domain'] = DOMAIN
+    if d['pass'] is None:
+        d['pass'] = getpass.getpass("Please insert password for SMB user '{domain}\\{user}' on {host}: ".format( **d ) )
+    d['path'] = os.path.join(d['path'], subpath) if d['path'] else subpath
+    #print d
+    return d
+
+
+
+
+# ---------------------------------------------------------------------
+
+
 class SMBTransport( BaseWTransport ):
     """
     A full R/W transport connecting to a remote folder via a Windows
@@ -530,6 +485,88 @@ class SMBTransport( BaseWTransport ):
         """
         pass
 
+
+
+import os
+import sys
+import errno
+import subprocess
+import stat
+import re
+import ast
+import hashlib
+import glob
+from datetime import datetime
+from posixpath import join as posixjoin
+from HTMLParser import HTMLParser
+from ConfigParser import SafeConfigParser, NoSectionError, NoOptionError
+from operator import itemgetter
+from collections import defaultdict
+from contextlib import closing
+
+try:
+    import cStringIO as StringIO
+except ImportError:
+    import StringIO
+
+
+# ---------------------------------------------------------------------
+
+def git_find_info( what, repo_dir ):
+    """
+    Find information about a git repository. Try first calling the git
+    command line directly; if that fails search within git internals
+    """
+    class StrippedFile(file):
+        """A small helper class to read a config file with leading spaces"""
+        def readline(self):
+            return super(StrippedFile, self).readline().strip()
+
+    # Range of git commands we can execute
+    commands = { 'remote' : ['git','config','--get', 'remote.origin.url'],
+                 'branch' : ['git','rev-parse','--abbrev-ref','HEAD'],
+                 'ignored' : ['git','ls-files','-o','-i', '--exclude-standard']
+               }
+
+    # Execute git. If that fails, try digging into .git repo dir directly
+    try:
+
+        cmd = commands[what]
+        if sys.version_info < (2,7):
+            r = subprocess.Popen(cmd,cwd=repo_dir,stdout=subprocess.PIPE).communicate()[0]
+        else:
+            r = subprocess.check_output(cmd,cwd=repo_dir)
+        output = r.rstrip()
+
+    except Exception as e:
+        if hasattr(e,'errno') and e.errno == errno.ENOENT:
+            raise InvalidArgumentError("can't find directory: '%s'" % repo_dir)
+        elif what == 'ignored':
+            raise InvalidArgumentError("can't use --git-ignored option: git execution failed: " + str(e) )
+
+        try:
+            if what == 'remote':
+                c = SafeConfigParser()
+                with StrippedFile(os.path.join(repo_dir,'.git','config')) as f:
+                    c.readfp(f)
+                    output = c.get('remote "origin"','url')
+            else:       # what == 'branch'
+                with open(os.path.join(repo_dir,'.git','HEAD')) as f:
+                    data = f.readline().rstrip()
+                return data.split('refs/heads/')[-1]
+        except Exception as e:
+            if hasattr(e,'errno') and e.errno == errno.ENOENT:
+                raise InvalidArgumentError("can't find git metadata in '%s'" % repo_dir)
+
+    # Terminate output parsing
+    if what == 'remote':
+        (head,tail) = output.split(':')
+        (repo_name,ext) = os.path.splitext( tail )
+        return repo_name
+    elif what == 'ignored':
+        return output.splitlines()
+    else:
+        return output
 
 # ---------------------------------------------------------------------
         
@@ -1136,6 +1173,47 @@ class ArtifactReader( object ):
         cfg.write( sys.stdout )
 
 
+
+
+
+
+
+import os
+import sys
+import errno
+import stat
+import re
+import glob
+from datetime import datetime
+from posixpath import join as posixjoin
+from HTMLParser import HTMLParser
+from ConfigParser import SafeConfigParser, NoSectionError, NoOptionError
+from collections import defaultdict
+from contextlib import closing
+
+try:
+    import cStringIO as StringIO
+except ImportError:
+    import StringIO
+
+
+
+class MLStripper(HTMLParser):
+    def __init__(self):
+        self.reset()
+        self.fed = []
+    def handle_data(self, d):
+        self.fed.append(d)
+    def get_data(self):
+        return ''.join(self.fed)
+
+def strip_tags(html):
+    """A function to remove all HTML tags from a text buffer"""
+    s = MLStripper()
+    s.feed(html)
+    return s.get_data()
+
+
 # ---------------------------------------------------------------------
 
 class ArtifactManager( ArtifactReader ):
@@ -1329,7 +1407,8 @@ class ArtifactManager( ArtifactReader ):
 
 
 
-# ***************************************************************************
+
+import argparse
 
 if __name__ == "__main__":
 
