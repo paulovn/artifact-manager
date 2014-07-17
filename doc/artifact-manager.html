@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Artifact Manager @ PDIHUB</title>
+    
+    <meta name="description" content="artifact-manager, a small spec & script for management of project artifacts">
+    <meta name="author" content="Paulo Villegas" />
+
+    <link href="artifact-manager.css" rel="stylesheet" type="text/css" />
+
+    <script type="text/javascript" src="jquery-1.10.2.min.js"></script>
+    <script type="text/javascript" src="jmpress.custom.js"></script>
+</head>
+<body>
+
+
+<!-- *******************************************************************  -->
+
+<div id="impress" class="impress-not-supported">
+
+    <div id="s1-cover" class="step slide" data-x="-1000" data-y="0">
+      <q style="margin-top: 6em; color: blue;">Artifact management in a PDIHUB project</q>
+      <br/>
+      <div class="who">Paulo Villegas<br/><em>paulo@tid.es</em></div>
+    </div>
+
+    <div id="s2-context" class="step slide" data-x="0" data-y="0">
+      <q>The context</q>
+      <div>
+        <ul class="bullet">
+          <li>we have a software project</li>
+          <li>hosted in PDIHUB (i.e. using <u>git</u>)</li>
+          <li>... but we need to use (and store) binary files. Potentially big ones</li>
+          <li><span style="color: red;">... NOT IN git!!!</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- .......................................................  -->
+
+    <div id="s3-img-tree" class="step slide bg-img" 
+         data-x="0" data-y="-800">
+    </div>
+
+    <div id="s4-img-tree-expanded" class="step slide bg-img" 
+         data-x="0" data-y="-1600">
+    </div>
+
+    <div id="s5-img-tree-data" class="step slide bg-img" 
+         data-x="0" data-y="-2400">
+      <svg>
+        <rect width="260" height="30"
+              x="120" y="200"
+              id="rect3039"
+              style="fill-opacity: 0; stroke:#ff0000; stroke-width:2;stroke-opacity:1" />
+        <rect width="260" height="30"
+              x="120" y="580"
+              id="rect3039"
+              style="fill-opacity: 0; stroke:#ff0000; stroke-width:2;stroke-opacity:1" />
+
+        </svg>
+    </div>
+
+    <!-- .......................................................  -->
+
+    <div id="s6-what" class="step slide" 
+         data-x="1000" data-y="0">
+      <q>What is <u>artifact-manager</u>?</q>
+
+      <ul class="bullet">
+        <li>A <strong>specification</strong> for storing binary files in a remote server (or local folder)</li>
+        <li>A <strong>Python script</strong> to fetch/retrieve/compare artifact lists</li>
+      </ul>
+    </div>
+
+    <!-- .......................................................  -->
+
+    <div id="s7-mechanics" class="step slide" 
+         data-x="-1000" data-y="1000">
+      
+      <embed src="img/artifact-manager-dataflow-export.svg" type="image/svg+xml" /> 
+    </div>
+
+
+    <div id="s8-repo-web" class="step slide" 
+         data-x="0" data-y="1000">
+
+      <q>What does an artifact repo contain?</q>
+      <img src="screens/repo-web.png" 
+           style="border: 1px solid gray; margin: 16px 0px 0px 0px; width: 800px;"/>
+    </div>
+
+    <div id="s9-repo-content" class="step slide" 
+         data-x="1000" data-y="1000">
+
+      <div>(not to be consumed by humans)</div>
+
+      <img src="screens/repo.png" 
+           style="border: 1px solid gray; margin: 16px;"/>
+    </div>
+
+    <!-- .......................................................  -->
+
+<!-- 
+cat refs/develop
+117dbb8d2dd384e58d7a84d086ec34e25b8954b8
+2445a7ee314530cc93c25ddf12436f60c051d6a5
+50770d1ab4a4d09f46a5dbd5f84f602ddd610ed1
+5c57e1ef524d84c1fd1d319eed59de4965d97f22
+9917195d57b3bddf320a7f2c4f8d7ed771924771
+b018e454d0237eb54ca629cc14424274ffcd322d
+eb4f1a2c50530623e0d7b492cb5e34637f36e718
+ -->
+         
+    <div id="s9-process-1" class="step slide bg-img" 
+         data-x="0" data-y="2000">
+         <q>Process (I)</q>
+         <div>Clone git repo and download the artifacts that correspond to the cloned branch</div>
+
+<div class="shell" style="margin-top: 2em;">
+<b>nvp@venus</b> git clone git@pdihub.hi.inet:opengvp/opengvp-r-vps.git
+Cloning into 'opengvp-r-vps'...
+remote: Counting objects: 2616, done.
+remote: Compressing objects: 100% (1064/1064), done.
+remote: Total 2616 (delta 1640), reused 2494 (delta 1532)
+Receiving objects: 100% (2616/2616), 2.18 MiB | 5 KiB/s, done.
+Resolving deltas: 100% (1640/1640), done. 
+
+<b>nvp@venus</b> artifact-manager download
+# Info: download artifacts for 'develop'
+ new: share/data/net/nvp-graph.cys [DOWN]
+ new: var/data/cache-random.txt [DOWN]
+ new: var/data/experts-uc.pkl [DOWN]
+ new: var/data/map-uc-movielens.pkl [DOWN]
+ new: var/data/movielens.pkl [DOWN]
+ new: var/data/test-basic.pkl [DOWN]
+ new: var/data/titlecache-ultra-final.txt [DOWN]
+</div>
+    </div>
+
+    <div id="s10-process-2" class="step slide bg-img" 
+         data-x="1000" data-y="2000">
+
+      <q>Process (II)</q>
+
+      <div>Inspect available branches, both in git repo and in
+         artifact repo</div>
+
+<div class="shell" style="margin-top: 2em;">
+<b>nvp@venus></b> git branch
+  feature/9364-popular_items
+  feature/9756-homeservice_review
+  feature/itemsets_api
+  feature/new-graph-object
+  master
+  release/1.25.2
+  release/1.27.2
+  release/1.35.4
+  bug/missing_files
+* develop
+
+<b>nvp@venus></b> artifact-manager branches
+
+# Info: list remote branches
+  develop
+  master
+  release/1.25.2
+  release/1.27.2
+  release/1.35.4
+</div>
+    </div>
+
+    <div id="s11-process-3" class="step slide bg-img" 
+         data-x="2000" data-y="2000">
+
+      <q>Process (III)</q>
+      <div>Change git local branch, and check artifacts against the changed branch</div>
+
+<div class="shell" style="margin-top: 4em;"><b>nvp@venus></b> git checkout feature/new-graph-object
+Branch feature/new-graph-object set up to track remote branch feature/new-graph-object from origin.
+Switched to a new branch 'feature/new-graph-object'
+
+<b>nvp@venus></b> artifact-manager diff
+
+# Info: check local artifacts against 'feature/new-graph-object'
+** only in local
+  2013-10-31 16:17    505K share/data/DB/zoneinfo.sql.gz
+  2013-09-16 21:10    4.1M share/data/net/popcha-summer-2013.cys
+  2013-07-17 16:31     24K var/data/cache-random.txt
+  2012-01-16 15:37    4.2M var/data/expertratings.pkl
+  2012-03-07 21:34     13K var/data/experts-uc.pkl
+** only in server
+  2013-07-16 10:47     40K share/data/net/nvp-graph.cys
+  2013-07-23 15:55     25K var/data/cache-random.txt
+  2013-07-29 11:33     18K var/data/experts-uc.pkl
+</div>
+    </div>
+
+    <div id="s12-process-4" class="step slide bg-img" 
+         data-x="3000" data-y="2000">
+
+      <q>Process (IV)</q>
+      <div>Sync artifacts with the switched branch: download new files, delete old files</div>
+
+<div class="shell" style="margin-top: 4em;"><b>nvp@venus></b> artifact-manager download --delete-local
+
+# Info: download artifacts for 'develop'
+ old: share/data/DB/zoneinfo.sql.gz 
+ new: share/data/net/nvp-graph.cys 
+ old: share/data/net/popcha-summer-2013.cys 
+ old: var/data/cache-random.txt 
+ new: var/data/cache-random.txt 
+ old: var/data/expertratings.pkl 
+ old: var/data/experts-uc.pkl 
+ new: var/data/experts-uc.pkl 
+  ok: var/data/map-uc-movielens.pkl 
+  ok: var/data/movielens.pkl 
+  ok: var/data/test-basic.pkl 
+  ok: var/data/titlecache-ultra-final.txt 
+</div>
+
+    </div>
+
+    <!-- .......................................................  -->
+
+    <div id="s13-conclusions" class="step slide bg-img" 
+         data-x="0" data-y="3000">
+
+         <q><u>artifact-manager</u> is ..</q>
+         <ul class="bullet">
+           <li>Ready to use<br/>(we've been using it for some months)</li>
+           <li>Available at<br/>
+             <b style="font-weight: bold; font-size: 80%;"><a href="https://pdihub.hi.inet/paulo/artifact-manager">https://pdihub.hi.inet/paulo/artifact-manager</a></b></li>
+           <li>Still being worked on<br/>(e.g. improvements in backend storage)</li>
+           <li>Wishlist
+             <ul>
+               <li>A web-based repository browser</li>
+               <li>Native support for SMB protocol</li>
+             </ul>
+           </li>
+         </ul>
+    </div>
+
+    <!-- .......................................................  -->
+
+    <div id="overview" class="step" data-x="3000" data-y="000" data-scale="10">
+    </div>
+
+</div>
+
+<div class="hint">
+  <p>Use a spacebar or arrow keys to navigate</p>
+</div>
+
+<script type="text/javascript">
+$(function() {
+  $('#impress').jmpress();
+});
+$('#jmpress').jmpress({
+  keyboard: {
+    keys: {
+      189: ['select', '#overview']
+    }
+  }
+});
+</script>
+
+
+<div style="position: fixed; bottom: 50px; left: 10px; pointer-events: auto; zindex; -2;">
+  <img src="img/telefonica-logo-blanco-66t.png" style="border: 0px;">
+</div>
+
+
+</body>
+</html>

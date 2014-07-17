@@ -2,3 +2,7 @@
 *~
 \#*#
 .#*
+
+# compiled modules
+*.pyc
+artifact-managerc
