@@ -10,6 +10,9 @@ import errno
 import stat
 import re
 
+# chunksize for reading/writing local files
+CHUNK = 8192
+
 
 # ---------------------------------------------------------------------
 

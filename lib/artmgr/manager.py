@@ -1,7 +1,7 @@
 # ********************************************************************** <====
 
 from artmgr import *
-from artmgr.reader import ArtifactReader
+from artmgr.reader import ArtifactReader, object_remote_location, open_transports, write_options_to_cfg
 
 # ********************************************************************** ====>
 
@@ -25,6 +25,8 @@ except ImportError:
     import StringIO
 
 
+
+# ---------------------------------------------------------------------
 
 class MLStripper(HTMLParser):
     def __init__(self):

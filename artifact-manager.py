@@ -15,6 +15,16 @@ Accepts as transport layers:
 
 """
 
+APP_VERSION = '2.0'
+
+# Default URLs for the artifacts repository (as R & R/W transports)
+#REPO_URL = ('http://artifacts.hi.inet',r'\\oriente.hi.inet\artifacts')
+
+# Default URLs for the artifactory repository (as R & R/W transports)
+# The R/W transport is assumed to be locally mounted
+REPO_URL = ('http://artifactory.hi.inet/artifactory/misc-opengvp',
+            '/mnt/artifactory')
+
 
 # ********************************************************************** <====
 
@@ -22,7 +32,7 @@ import sys
 import os.path
 sys.path.append( os.path.join(os.path.dirname(__file__),'lib') )
 
-from artmgr import REPO_URL, DEFAULT_OPTIONS, WHEREAMI
+from artmgr import DEFAULT_OPTIONS, WHEREAMI
 from artmgr.reader import ArtifactReader, git_find_info
 from artmgr.manager import ArtifactManager
 
@@ -50,7 +60,7 @@ if __name__ == "__main__":
 
 
     # Define & read command-line options
-    parser = argparse.ArgumentParser( description="Manage binary artifacts against a versioned remote repository. See " + WHEREAMI)
+    parser = argparse.ArgumentParser( description="Manage binary artifacts against a versioned remote repository (v. "+APP_VERSION+"). See " + WHEREAMI)
     subp = parser.add_subparsers( dest='command', title='command',
                                   help='Use -h on the command for additional options')
 

@@ -29,6 +29,131 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------
+        
+def object_remote_location( name ):
+    """Return the location of an object in the repository, as (path,basename)"""
+    return (OBJECTS + '/' + name[:2], name[2:])
+
+
+def _open_single_transport( url, subrepo, verbose ):
+    """Open a transport to a remote repo"""
+    #print url
+    if( url.startswith('http:') or url.startswith('https:') ):
+        return WebTransport( url, subrepo, verbose )
+    elif( url.startswith('\\') or url.startswith('smb:') ):
+        return SMBTransport( url, subrepo )
+    else:
+        return LocalTransport( url, subrepo )
+
+
+def open_transports( spec, subrepo, write=False, verbose=0 ):
+    """Open one (R) or two (R & R/W) transports to a remote repo"""
+    spec = spec.split(',')
+    reader = _open_single_transport( spec[0], subrepo, verbose )
+    if not write:
+        return reader
+    if len(spec) == 1:
+        spec.append( spec[0] )
+    writer = _open_single_transport( spec[1], subrepo, verbose )
+    return (reader,writer)
+
+
+def write_options_to_cfg( obj, cfg ):
+    """Convert the options stored in the object into a config object"""
+    cfg.add_section( OPTIONS_SECTION )
+    for n in DEFAULT_OPTIONS:
+        cfg.set( 'general', n, str(getattr(obj,n)) )
+
+
+def read_options_from_cfg( remote_cfg, command_line_options, obj ):
+    """
+    Insert config options into an object. First set from defaults, then
+    override with the config of the remote repo, and finally override
+    with command-line options
+    """
+    # Check version
+    try:
+        v = remote_cfg.getint(OPTIONS_SECTION,'VERSION') 
+        if v > BACKEND_VERSION:
+            raise InvalidArgumentError( 'incompatible repository version: '+str(v) )
+    except NoSectionError:
+        remote_cfg.add_section( OPTIONS_SECTION )
+    except NoOptionError:
+        pass
+    # Fill in options
+    for k in DEFAULT_OPTIONS:
+        # Set default
+        setattr(obj,k,DEFAULT_OPTIONS[k])
+        # Override with remote config
+        try:
+            remote_value = remote_cfg.get(OPTIONS_SECTION,k)
+            setattr( obj, k, ast.literal_eval(remote_value) )
+        except NoOptionError:
+            pass
+        except (SyntaxError,ValueError) as err:
+            raise TransportError( "Can't parse remote value for config option '"
+                                  + k + "': " + remote_value )
+        # Finally, override with a command-line argument if defined
+        v = getattr(command_line_options,k,None)
+        if v is not None:
+            setattr(obj,k,v)
+    
+
+# ---------------------------------------------------------------------
+
+def sha1_file( size, filename ):
+    """Compute a hash over a file, using the same spec that Git uses"""
+    s = hashlib.sha1()
+    s.update("blob %u\0" % size)
+    with open(filename,'rb') as f:
+        while True:
+            bytes = f.read(8192)
+            if not bytes:
+                break
+            s.update(bytes)
+    return s.hexdigest()  
+
+def fix_path(path):
+    """Normalize a local path, and ensure we use forward slashes"""
+    result = os.path.normpath(path)
+    if os.sep == '\\':
+        result = result.replace('\\', '/')
+    return result
+
+def size_string(size):
+    """Return a human-readable string for a size given in bytes"""
+    suffixes = ['','K','M','G','T']
+    suffixIndex = 0
+    precision = int(size > 1048576)
+    while size > 1024:
+        suffixIndex += 1 #increment the index of the suffix
+        size = size/1024.0 #apply the division
+    return "%.*f%s"%(precision,size,suffixes[suffixIndex])
+
+def item_string(entry,subdir,path=None):
+    """
+    Return the item description corresponding to an object, as a string
+      @param entry (list): the object record, in the index
+      @param subdir (str or None): an optional subdirectory to take out of the
+        filename
+      @param path (str): the filename to print (overrides the one in the index)
+    """
+    start = 0 if subdir is None else len(subdir)
+    if path is None:
+        path = entry[3]
+    return '  %s %6s %s' % (datetime.fromtimestamp(entry[0]).strftime('%Y-%m-%d %H:%M %z'), size_string(entry[1]), path[start:] )
+
+def dict_to_set( c ):
+    """
+    Convert a dict holding lists of strings into a set, 
+    joining keys & values
+    """
+    if c is None:
+        return set()
+    return set( ((k,l) for k,v in c.iteritems() for l in v ) )
+
+
+# ---------------------------------------------------------------------
 
 def git_find_info( what, repo_dir ):
     """
@@ -86,124 +211,6 @@ def git_find_info( what, repo_dir ):
     else:
         return output
 
-# ---------------------------------------------------------------------
-        
-
-def open_single_transport( url, subrepo, verbose ):
-    """Open a transport to a remote repo"""
-    #print url
-    if( url.startswith('http:') or url.startswith('https:') ):
-        return WebTransport( url, subrepo, verbose )
-    elif( url.startswith('\\') or url.startswith('smb:') ):
-        return SMBTransport( url, subrepo )
-    else:
-        return LocalTransport( url, subrepo )
-
-def open_transports( spec, subrepo, write=False, verbose=0 ):
-    """Open one (R) or two (R & R/W) transports to a remote repo"""
-    spec = spec.split(',')
-    reader = open_single_transport( spec[0], subrepo, verbose )
-    if not write:
-        return reader
-    if len(spec) == 1:
-        spec.append( spec[0] )
-    writer = open_single_transport( spec[1], subrepo, verbose )
-    return (reader,writer)
-
-def sha1_file( size, filename ):
-    """Compute a hash over a file, using the same spec that Git uses"""
-    s = hashlib.sha1()
-    s.update("blob %u\0" % size)
-    with open(filename,'rb') as f:
-        while True:
-            bytes = f.read(8192)
-            if not bytes:
-                break
-            s.update(bytes)
-    return s.hexdigest()  
-
-def fix_path(path):
-    """Normalize a local path, and ensure we use forward slashes"""
-    result = os.path.normpath(path)
-    if os.sep == '\\':
-        result = result.replace('\\', '/')
-    return result
-
-def size_string(size):
-    """Return a human-readable string for a size given in bytes"""
-    suffixes = ['','K','M','G','T']
-    suffixIndex = 0
-    precision = int(size > 1048576)
-    while size > 1024:
-        suffixIndex += 1 #increment the index of the suffix
-        size = size/1024.0 #apply the division
-    return "%.*f%s"%(precision,size,suffixes[suffixIndex])
-
-def item_string(entry,subdir,path=None):
-    """
-    Return the item description corresponding to an object, as a string
-      @param entry (list): the object record, in the index
-      @param subdir (str or None): an optional subdirectory to take out of the
-        filename
-      @param path (str): the filename to print (overrides the one in the index)
-    """
-    start = 0 if subdir is None else len(subdir)
-    if path is None:
-        path = entry[3]
-    return '  %s %6s %s' % (datetime.fromtimestamp(entry[0]).strftime('%Y-%m-%d %H:%M %z'), size_string(entry[1]), path[start:] )
-
-def dict_to_set( c ):
-    """
-    Convert a dict holding lists of strings into a set, 
-    joining keys & values
-    """
-    if c is None:
-        return set()
-    return set( ((k,l) for k,v in c.iteritems() for l in v ) )
-
-def object_remote_location( name ):
-    """Return the location of an object in the repository, as (path,basename)"""
-    return (OBJECTS + '/' + name[:2], name[2:])
-
-def write_options_to_cfg( obj, cfg ):
-    """Convert the options stored in the object into a config object"""
-    cfg.add_section( OPTIONS_SECTION )
-    for n in DEFAULT_OPTIONS:
-        cfg.set( 'general', n, str(getattr(obj,n)) )
-
-def read_options_from_cfg( remote_cfg, command_line_options, obj ):
-    """
-    Insert config options into an object. First set from defaults, then
-    override with the config of the remote repo, and finally override
-    with command-line options
-    """
-    # Check version
-    try:
-        v = remote_cfg.getint(OPTIONS_SECTION,'VERSION') 
-        if v > VERSION:
-            raise InvalidArgumentError( 'incompatible repository version: '+str(v) )
-    except NoSectionError:
-        remote_cfg.add_section( OPTIONS_SECTION )
-    except NoOptionError:
-        pass
-    # Fill in options
-    for k in DEFAULT_OPTIONS:
-        # Set default
-        setattr(obj,k,DEFAULT_OPTIONS[k])
-        # Override with remote config
-        try:
-            value = remote_cfg.get(OPTIONS_SECTION,k)
-            setattr( obj, k, ast.literal_eval(value) )
-        except NoOptionError:
-            pass
-        except (SyntaxError,ValueError) as err:
-            raise TransportError( "Can't parse remote value for config option '"
-                                  + k + "': " + value )
-        # Finally, override with a command-line argument if defined
-        v = getattr(command_line_options,k,None)
-        if v is not None:
-            setattr(obj,k,v)
-    
 
 # ---------------------------------------------------------------------
 

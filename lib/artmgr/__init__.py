@@ -4,14 +4,11 @@ import sys
 # ---------------------------------------------------------------------
 
 
-# Default URLs for the artifacts repository (as R & R/W transports)
-REPO_URL = ('http://artifacts.hi.inet',
-            r'\\oriente.hi.inet\artifacts')
 # SMB domain for authentication
 DOMAIN = 'HI'
 
 # Repository configuration: names of management files/dirs
-VERSION = 3
+BACKEND_VERSION = 3
 OPTIONS = 'options'
 INDEX = 'index'
 REFS = 'refs'
@@ -19,10 +16,9 @@ BRANCHES = 'branches'
 LOGS = 'logs'
 OBJECTS = 'objects'
 OPTIONS_SECTION = 'general'
-CHUNK = 8192
 
 # Default options
-DEFAULT_OPTIONS = { 'version' : VERSION,
+DEFAULT_OPTIONS = { 'version' : BACKEND_VERSION,
                     'git_ignored' : False,
                     'min_size' : 0,
                     'files' : (),
