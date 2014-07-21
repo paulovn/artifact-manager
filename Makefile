@@ -35,9 +35,11 @@ $(MAIN):	$(MAIN).in
 	@echo ".. Inserting git release number into script version"
 	@git fetch origin develop
 	VERSION=$$(git rev-list develop | wc -l);  sed -e "s/\(APP_VERSION =.*\)'/\1.$${VERSION}'/" $< > $@
+	chmod +x $@
 
 $(SCRIPT): $(LIBFILES) $(MAIN)
 	@echo ".. Merging files into $(SCRIPT)"
 	@( sed -e '1, /<====/ ! d'    $(MAIN); \
 	   sed -e '/<====/,/====>/ d' $(LIBFILES); \
 	   sed -e '1,/====>/ d'       $(MAIN) ) > $@
+	chmod +x $@
