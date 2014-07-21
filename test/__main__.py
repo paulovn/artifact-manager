@@ -1,6 +1,3 @@
-# --------------------------------------------------------------------------
-# $Id: __main__.py 10779 2013-07-04 11:44:55Z mmartin $
-# --------------------------------------------------------------------------
 """
 A script to enable execution of any python unit test in this directory.
 It will be called when Python tries to 'execute' this directory

@@ -36,6 +36,13 @@ here()
 # ----------------------------------------------------------------------
 
 HERE=`here $0`
+if [ "$1" = "--exec" ]
+then
+    PRG="$2"
+    shift 2
+else
+    PRG=artifact-manager.py
+fi
 
 # Find the newest available 2.x Python to execute
 for PYTHON in python2.7 python27 python2.6 python26 python2 python
@@ -43,10 +50,9 @@ do
     for DIR in /usr/bin /usr/local/bin /opt/bin
     do
 	test -x $DIR/$PYTHON && \
-	    exec "/usr/bin/$PYTHON" "$HERE/artifact-manager" "$@"
+	    exec "/usr/bin/$PYTHON" "$HERE/$PRG" "$@"
 	done
 done
 
 # Not found. Let's execute the script anyway and hope for the best ...
-exec "$HERE/artifact-manager" "$@"
-
+exec "$HERE/$PRG" "$@"

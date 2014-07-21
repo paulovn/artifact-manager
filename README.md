@@ -251,3 +251,27 @@ and, optionally,
 
 * The [pysmb](https://pypi.python.org/pypi/pysmb/1.1.5) Python module,
   only to use SMB transport for artifact upload
+
+
+
+Building
+--------
+
+The code has been developed as a small Python module `artmgr` that defines a
+few classes, called by the script `artifact-manager.py`. The Bash
+script `artifact-manager-wrapper` can be used to call that script
+ensuring that the latest available Python 2.X version in the machine
+is used.
+
+Alternatively, there is provision to concatenate all the needed
+modules into a single Python script that works on its own. This may be
+advantageous for e.g. adding this script as standalone to a project,
+so that it can be executed without the need of installing/locating the 
+`artmgr` module.
+
+To do so, simply execute
+   make standalone
+and the `artifact-manager`script (i.e. no extension) will be generated.
+
+A number of unit tests are available. They can be executed with
+   make unit
