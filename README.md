@@ -251,3 +251,41 @@ and, optionally,
 
 * The [pysmb](https://pypi.python.org/pypi/pysmb/1.1.5) Python module,
   only to use SMB transport for artifact upload
+
+
+
+Building
+--------
+
+The code has been developed as a small Python module `artmgr` that defines a
+few classes, called by the script `artifact-manager.py`. The Bash
+script `artifact-manager-wrapper` can be used to call that script
+ensuring that the latest available Python 2.X version in the machine
+is used.
+
+Before using, you need to define the access points for the repository. That's 
+the 2-element list `REPO_URL` in `artifact-manager.py`:
+ * The first string is the read access point. It can be either a local 
+   directory or an URL (for HTTP access)
+ * The second string is the write access point. Currently it needs to be
+   a local path (so if the repository is remote, it must be mounted locally
+   so it appears as a local directory)
+
+Alternatively, there is provision to concatenate all the needed
+modules into a single Python script that works on its own. This may be
+advantageous for e.g. adding this script as standalone to a project,
+so that it can be executed without the need of installing/locating the 
+`artmgr` module.
+
+To create both the `artifact-manager.py` and the standalone `artifact-manager` 
+(i.e. no extension) single script, simply execute
+
+   make
+
+A number of unit tests are available. They can be executed with
+
+   make unit
+
+or by calling Python on the test directory, i.e. "python ./test". You can 
+also execute only some of the tests by specifying the file names
+"python ./test <name> ..."
