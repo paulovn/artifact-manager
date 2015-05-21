@@ -1,0 +1,9 @@
+This project provides a Python script/package to manage a repository of project 
+artifacts, possibly versioned. It can be turned into a single-file script 
+instead of a Python module to ease its use in a project: simply copy the file 
+inside the project structure and you're done.
+
+Documentation on requirements, building and usage is included in README.md
+
+There is also a Bash completion script, to ease working with the script in 
+the command line.
